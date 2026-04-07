@@ -1,0 +1,324 @@
+import pytest
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.accounts.models import StudentProfile, TeacherProfile, User
+from apps.academics.models import AcademicYear
+
+
+def auth_client(user):
+    client = APIClient()
+    token = str(RefreshToken.for_user(user).access_token)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    return client
+
+
+@pytest.mark.django_db
+def test_admin_can_access_admin_endpoints(admin_user):
+    client = auth_client(admin_user)
+
+    response = client.get("/api/admin/users/")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_student_forbidden_from_admin_endpoints(student_user):
+    client = auth_client(student_user)
+
+    response = client.get("/api/admin/users/")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_super_admin_can_create_admin_account(super_admin_user):
+    client = auth_client(super_admin_user)
+
+    response = client.post(
+        "/api/super-admin/admins/",
+        {
+            "matricule": "ADM200",
+            "email": "newadmin@example.com",
+            "first_name": "New",
+            "last_name": "Admin",
+            "password": "StrongPass123!",
+            "global_role": "ADMIN",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    created = User.objects.get(email="newadmin@example.com")
+    assert created.global_role == User.GlobalRole.ADMIN
+
+
+@pytest.mark.django_db
+def test_admin_cannot_create_super_admin(admin_user):
+    client = auth_client(admin_user)
+
+    response = client.post(
+        "/api/admin/users/",
+        {
+            "matricule": "SADM200",
+            "email": "newsuper@example.com",
+            "first_name": "New",
+            "last_name": "Super",
+            "password": "StrongPass123!",
+            "global_role": "SUPER_ADMIN",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["global_role"][0]
+        == "ADMIN can only create/update STUDENT or TEACHER accounts."
+    )
+
+
+@pytest.mark.django_db
+def test_academic_year_creation_valid(admin_user):
+    client = auth_client(admin_user)
+
+    response = client.post(
+        "/api/admin/academic-years/",
+        {"year": "2025/2026", "is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.json()["year"] == "2025/2026"
+
+
+@pytest.mark.django_db
+def test_academic_year_unique_active_constraint_auto_switch(admin_user):
+    client = auth_client(admin_user)
+
+    first = AcademicYear.objects.create(year="2025/2026", is_active=True)
+    response = client.post(
+        "/api/admin/academic-years/",
+        {"year": "2026/2027", "is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    first.refresh_from_db()
+    assert first.is_active is False
+    assert AcademicYear.objects.get(year="2026/2027").is_active is True
+
+
+@pytest.mark.django_db
+def test_archived_academic_year_cannot_stay_active(admin_user):
+    client = auth_client(admin_user)
+    year = AcademicYear.objects.create(year="2025/2026", is_active=False, is_archived=False)
+
+    response = client.patch(
+        f"/api/admin/academic-years/{year.id}/",
+        {"is_archived": True, "is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_archived_academic_year_excluded_from_default_list(admin_user):
+    client = auth_client(admin_user)
+    AcademicYear.objects.create(year="2025/2026", is_archived=False)
+    AcademicYear.objects.create(year="2024/2025", is_archived=True)
+
+    response = client.get("/api/admin/academic-years/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    years = [item["year"] for item in payload["results"]]
+    assert "2025/2026" in years
+    assert "2024/2025" not in years
+
+
+@pytest.mark.django_db
+def test_include_archived_true_returns_archived_years(admin_user):
+    client = auth_client(admin_user)
+    AcademicYear.objects.create(year="2025/2026", is_archived=False)
+    AcademicYear.objects.create(year="2024/2025", is_archived=True)
+
+    response = client.get("/api/admin/academic-years/?include_archived=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    years = [item["year"] for item in payload["results"]]
+    assert "2025/2026" in years
+    assert "2024/2025" in years
+
+
+@pytest.mark.django_db
+def test_patching_archived_academic_year_is_rejected(admin_user):
+    client = auth_client(admin_user)
+    year = AcademicYear.objects.create(year="2025/2026", is_archived=True, is_active=False)
+
+    response = client.patch(
+        f"/api/admin/academic-years/{year.id}/",
+        {"year": "2025/2026-updated"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Archived academic year cannot be updated."
+
+
+@pytest.mark.django_db
+def test_academic_year_archive_endpoint(admin_user):
+    client = auth_client(admin_user)
+    year = AcademicYear.objects.create(year="2025/2026", is_active=True)
+
+    response = client.post(f"/api/admin/academic-years/{year.id}/archive/", {}, format="json")
+
+    assert response.status_code == 200
+    year.refresh_from_db()
+    assert year.is_archived is True
+    assert year.is_active is False
+
+
+@pytest.mark.django_db
+def test_user_archive_endpoint(admin_user, student_user):
+    client = auth_client(admin_user)
+
+    response = client.post(f"/api/admin/users/{student_user.id}/archive/", {}, format="json")
+
+    assert response.status_code == 200
+    student_user.refresh_from_db()
+    assert student_user.is_archived is True
+    assert student_user.is_active is False
+
+
+@pytest.mark.django_db
+def test_student_profile_can_link_to_academic_year(admin_user, student_user):
+    client = auth_client(admin_user)
+    year = AcademicYear.objects.create(year="2025/2026", is_active=True)
+
+    response = client.patch(
+        f"/api/admin/users/{student_user.id}/",
+        {
+            "global_role": "STUDENT",
+            "student_profile": {"academic_year": year.id, "specialite": "AI"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    student_profile = StudentProfile.objects.get(user=student_user)
+    assert student_profile.academic_year_id == year.id
+    assert student_profile.specialite == "AI"
+
+
+@pytest.mark.django_db
+def test_user_creation_student_role_creates_or_updates_student_profile(admin_user):
+    client = auth_client(admin_user)
+    year = AcademicYear.objects.create(year="2025/2026", is_active=True)
+
+    response = client.post(
+        "/api/admin/users/",
+        {
+            "matricule": "STU999",
+            "email": "student999@example.com",
+            "first_name": "Stu",
+            "last_name": "Dent",
+            "password": "StrongPass123!",
+            "global_role": "STUDENT",
+            "student_profile": {
+                "academic_year": year.id,
+                "moyenne_generale": "14.50",
+                "specialite": "SE",
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    created = User.objects.get(email="student999@example.com")
+    profile = StudentProfile.objects.get(user=created)
+    assert profile.academic_year_id == year.id
+    assert str(profile.moyenne_generale) == "14.50"
+
+
+@pytest.mark.django_db
+def test_user_creation_teacher_role_creates_or_updates_teacher_profile(admin_user):
+    client = auth_client(admin_user)
+
+    response = client.post(
+        "/api/admin/users/",
+        {
+            "matricule": "TEA999",
+            "email": "teacher999@example.com",
+            "first_name": "Tea",
+            "last_name": "Cher",
+            "password": "StrongPass123!",
+            "global_role": "TEACHER",
+            "teacher_profile": {"grade": "MC", "departement": "Informatique"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    created = User.objects.get(email="teacher999@example.com")
+    profile = TeacherProfile.objects.get(user=created)
+    assert profile.grade == "MC"
+
+
+@pytest.mark.django_db
+def test_admin_cannot_patch_user_to_admin(admin_user, student_user):
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/admin/users/{student_user.id}/",
+        {"global_role": "ADMIN"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["global_role"][0]
+        == "ADMIN can only create/update STUDENT or TEACHER accounts."
+    )
+
+
+@pytest.mark.django_db
+def test_admin_cannot_patch_user_to_super_admin(admin_user, teacher_user):
+    client = auth_client(admin_user)
+
+    response = client.patch(
+        f"/api/admin/users/{teacher_user.id}/",
+        {"global_role": "SUPER_ADMIN"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["global_role"][0]
+        == "ADMIN can only create/update STUDENT or TEACHER accounts."
+    )
+
+
+@pytest.mark.django_db
+def test_admin_list_endpoints_are_paginated(admin_user):
+    client = auth_client(admin_user)
+
+    for idx in range(15):
+        User.objects.create_user(
+            matricule=f"STU-P-{idx}",
+            email=f"stu-p-{idx}@example.com",
+            password="Testpass123!",
+            global_role=User.GlobalRole.STUDENT,
+        )
+
+    users_response = client.get("/api/admin/users/")
+    years_response = client.get("/api/admin/academic-years/")
+
+    assert users_response.status_code == 200
+    assert "count" in users_response.json()
+    assert "results" in users_response.json()
+
+    assert years_response.status_code == 200
+    assert "count" in years_response.json()
+    assert "results" in years_response.json()

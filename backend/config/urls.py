@@ -1,0 +1,20 @@
+from django.contrib import admin
+from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
+from config.api import HealthCheckView
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("api/health/", HealthCheckView.as_view(), name="health-check"),
+    path("api/auth/", include("apps.accounts.urls")),
+    path("api/admin/", include("apps.academics.urls")),
+    path("api/admin/", include("apps.accounts.admin_urls")),
+    path("api/super-admin/", include("apps.accounts.super_admin_urls")),
+    path("api/schema/", SpectacularAPIView.as_view(), name="api-schema"),
+    path(
+        "api/docs/",
+        SpectacularSwaggerView.as_view(url_name="api-schema"),
+        name="api-docs",
+    ),
+]
