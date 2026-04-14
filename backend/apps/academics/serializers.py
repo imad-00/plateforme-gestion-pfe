@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from apps.academics.models import AcademicYear
@@ -6,10 +6,10 @@ from apps.academics.models import AcademicYear
 
 class AcademicYearSerializer(serializers.ModelSerializer):
     """
-    Sprint 2 policy:
+    Academic year governance policy:
     - archived year cannot be active
-    - when a year is activated, it becomes the unique active year
-      by deactivating all others in the same transaction
+    - only one year can be active at a time
+    - activating one year archives/deactivates all others
     """
 
     class Meta:
@@ -23,6 +23,7 @@ class AcademicYearSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+        extra_kwargs = {"is_active": {"validators": []}}
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
@@ -38,18 +39,32 @@ class AcademicYearSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def _archive_and_deactivate_other_years(self, *, exclude_pk=None):
+        queryset = AcademicYear.objects.select_for_update()
+        if exclude_pk is not None:
+            queryset = queryset.exclude(pk=exclude_pk)
+        queryset.update(is_active=False, is_archived=True)
+
     def create(self, validated_data):
         with transaction.atomic():
-            # Keep a single active academic year at a time.
             if validated_data.get("is_active", False):
-                AcademicYear.objects.filter(is_active=True).update(is_active=False)
-            return super().create(validated_data)
+                self._archive_and_deactivate_other_years()
+                validated_data["is_archived"] = False
+            try:
+                return super().create(validated_data)
+            except IntegrityError as exc:
+                raise serializers.ValidationError(
+                    {"is_active": "Only one academic year can be active at a time."}
+                ) from exc
 
     def update(self, instance, validated_data):
         with transaction.atomic():
-            # Keep a single active academic year at a time.
             if validated_data.get("is_active", False):
-                AcademicYear.objects.exclude(pk=instance.pk).filter(is_active=True).update(
-                    is_active=False
-                )
-            return super().update(instance, validated_data)
+                self._archive_and_deactivate_other_years(exclude_pk=instance.pk)
+                validated_data["is_archived"] = False
+            try:
+                return super().update(instance, validated_data)
+            except IntegrityError as exc:
+                raise serializers.ValidationError(
+                    {"is_active": "Only one academic year can be active at a time."}
+                ) from exc

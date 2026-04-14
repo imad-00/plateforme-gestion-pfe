@@ -3,11 +3,21 @@ from django.db import transaction
 from rest_framework import serializers
 
 from apps.accounts.models import StudentProfile, TeacherProfile
+from apps.academics.models import AcademicYear
 
 User = get_user_model()
 
 
 class StudentProfileAdminSerializer(serializers.ModelSerializer):
+    def validate_academic_year(self, value):
+        if value is None:
+            return value
+        if value.is_archived or not value.is_active:
+            raise serializers.ValidationError(
+                "Student profile must be linked to the active academic year."
+            )
+        return value
+
     class Meta:
         model = StudentProfile
         fields = ["academic_year", "moyenne_generale", "specialite"]
@@ -74,6 +84,9 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
                 {"global_role": "ADMIN can only create/update STUDENT or TEACHER accounts."}
             )
 
+    def _get_active_academic_year(self):
+        return AcademicYear.objects.filter(is_active=True, is_archived=False).first()
+
     def validate(self, attrs):
         role = attrs.get("global_role", getattr(self.instance, "global_role", None))
         student_data = attrs.get("student_profile")
@@ -94,6 +107,13 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             if student_data is not None or teacher_data is not None:
                 raise serializers.ValidationError(
                     "Admin roles must not include student or teacher profile payload."
+                )
+
+        if role == User.GlobalRole.STUDENT:
+            active_year = self._get_active_academic_year()
+            if active_year is None:
+                raise serializers.ValidationError(
+                    {"student_profile": "No active academic year is configured."}
                 )
 
         if self.instance is None and not attrs.get("password"):
@@ -146,10 +166,20 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
         role = user.global_role
 
         if role == User.GlobalRole.STUDENT:
-            if student_data is not None:
-                StudentProfile.objects.update_or_create(user=user, defaults=student_data)
-            else:
-                StudentProfile.objects.get_or_create(user=user)
+            active_year = self._get_active_academic_year()
+            if active_year is None:
+                raise serializers.ValidationError(
+                    {"student_profile": "No active academic year is configured."}
+                )
+
+            effective_student_data = dict(student_data or {})
+            provided_year = effective_student_data.get("academic_year")
+            if provided_year is not None and provided_year.id != active_year.id:
+                raise serializers.ValidationError(
+                    {"student_profile": {"academic_year": "Student profile must use the active academic year."}}
+                )
+            effective_student_data["academic_year"] = active_year
+            StudentProfile.objects.update_or_create(user=user, defaults=effective_student_data)
             TeacherProfile.objects.filter(user=user).delete()
             return
 

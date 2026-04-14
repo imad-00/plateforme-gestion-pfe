@@ -95,17 +95,18 @@ def test_academic_year_creation_valid(admin_user):
 def test_academic_year_unique_active_constraint_auto_switch(admin_user):
     client = auth_client(admin_user)
 
-    first = AcademicYear.objects.create(year="2025/2026", is_active=True)
+    first = AcademicYear.objects.create(year="2024/2025", is_active=True, is_archived=False)
     response = client.post(
         "/api/admin/academic-years/",
-        {"year": "2026/2027", "is_active": True},
+        {"year": "2025/2026", "is_active": True},
         format="json",
     )
 
     assert response.status_code == 201
     first.refresh_from_db()
     assert first.is_active is False
-    assert AcademicYear.objects.get(year="2026/2027").is_active is True
+    assert first.is_archived is True
+    assert AcademicYear.objects.get(year="2025/2026").is_active is True
 
 
 @pytest.mark.django_db
@@ -240,6 +241,56 @@ def test_user_creation_student_role_creates_or_updates_student_profile(admin_use
     profile = StudentProfile.objects.get(user=created)
     assert profile.academic_year_id == year.id
     assert str(profile.moyenne_generale) == "14.50"
+
+
+@pytest.mark.django_db
+def test_student_creation_fails_without_active_academic_year(admin_user):
+    client = auth_client(admin_user)
+
+    response = client.post(
+        "/api/admin/users/",
+        {
+            "matricule": "STU_NO_ACTIVE",
+            "email": "stu-no-active@example.com",
+            "first_name": "Stu",
+            "last_name": "NoActive",
+            "password": "StrongPass123!",
+            "global_role": "STUDENT",
+            "student_profile": {"specialite": "SE"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["student_profile"][0] == "No active academic year is configured."
+
+
+@pytest.mark.django_db
+def test_student_creation_cannot_use_inactive_academic_year(admin_user):
+    client = auth_client(admin_user)
+    active_year = AcademicYear.objects.create(year="2025/2026", is_active=True, is_archived=False)
+    inactive_year = AcademicYear.objects.create(year="2024/2025", is_active=False, is_archived=False)
+
+    response = client.post(
+        "/api/admin/users/",
+        {
+            "matricule": "STU_WRONG_YEAR",
+            "email": "stu-wrong-year@example.com",
+            "first_name": "Stu",
+            "last_name": "WrongYear",
+            "password": "StrongPass123!",
+            "global_role": "STUDENT",
+            "student_profile": {"academic_year": inactive_year.id, "specialite": "SE"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["student_profile"]["academic_year"][0]
+        == "Student profile must be linked to the active academic year."
+    )
+    assert AcademicYear.objects.get(pk=active_year.id).is_active is True
 
 
 @pytest.mark.django_db

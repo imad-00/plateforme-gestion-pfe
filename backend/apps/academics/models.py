@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 
 
 class AcademicYear(models.Model):
@@ -16,6 +17,13 @@ class AcademicYear(models.Model):
         indexes = [
             models.Index(fields=["is_active"], name="academics_year_active_idx"),
             models.Index(fields=["is_archived"], name="academics_year_archived_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_active"],
+                condition=Q(is_active=True),
+                name="academics_single_active_year_constraint",
+            )
         ]
 
     def __str__(self):

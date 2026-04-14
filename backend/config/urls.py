@@ -10,7 +10,10 @@ urlpatterns = [
     path("api/auth/", include("apps.accounts.urls")),
     path("api/admin/", include("apps.academics.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
+    path("api/admin/", include("apps.topics.admin_urls")),
     path("api/super-admin/", include("apps.accounts.super_admin_urls")),
+    path("api/teacher/", include("apps.topics.teacher_urls")),
+    path("api/", include("apps.topics.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="api-schema"),
     path(
         "api/docs/",
