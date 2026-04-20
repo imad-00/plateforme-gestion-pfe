@@ -10,6 +10,16 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("The email field must be set.")
 
+        extra_fields.setdefault("business_identity", "STUDENT")
+
+        if "account_status" not in extra_fields:
+            if extra_fields.get("is_archived", False):
+                extra_fields["account_status"] = "ARCHIVED"
+            elif extra_fields.get("is_active", True) is False:
+                extra_fields["account_status"] = "SUSPENDED"
+            else:
+                extra_fields["account_status"] = "ACTIVE"
+
         email = self.normalize_email(email)
         user = self.model(email=email, matricule=matricule, **extra_fields)
         user.set_password(password)
@@ -24,7 +34,8 @@ class UserManager(BaseUserManager):
     def create_superuser(self, matricule, email, password, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("global_role", "SUPER_ADMIN")
+        extra_fields.setdefault("business_identity", "ADMINISTRATIVE_STAFF")
+        extra_fields.setdefault("account_status", "ACTIVE")
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError("Superuser must have is_staff=True.")

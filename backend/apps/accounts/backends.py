@@ -30,4 +30,4 @@ class MatriculeOrEmailBackend(ModelBackend):
         return None
 
     def user_can_authenticate(self, user):
-        return super().user_can_authenticate(user) and not user.is_archived
+        return super().user_can_authenticate(user) and getattr(user, "account_status", None) == "ACTIVE"

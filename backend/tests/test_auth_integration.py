@@ -149,4 +149,4 @@ def test_me_archived_user_forbidden(user_factory):
 
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
     response = client.get("/api/auth/me/")
-    assert response.status_code == 403
+    assert response.status_code == 401

@@ -9,6 +9,7 @@ urlpatterns = [
     path("api/health/", HealthCheckView.as_view(), name="health-check"),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/admin/", include("apps.academics.urls")),
+    path("api/admin/", include("apps.campaigns.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("api/admin/", include("apps.topics.admin_urls")),
     path("api/super-admin/", include("apps.accounts.super_admin_urls")),

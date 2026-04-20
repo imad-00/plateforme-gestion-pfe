@@ -2,7 +2,8 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 
-from apps.accounts.models import StudentProfile, TeacherProfile
+from apps.accounts.models import PlatformAccessGrant, StudentProfile, TeacherProfile
+from apps.accounts.permissions import get_platform_levels
 from apps.academics.models import AcademicYear
 
 User = get_user_model()
@@ -32,6 +33,7 @@ class TeacherProfileAdminSerializer(serializers.ModelSerializer):
 class AdminUserListSerializer(serializers.ModelSerializer):
     student_profile = StudentProfileAdminSerializer(read_only=True)
     teacher_profile = TeacherProfileAdminSerializer(read_only=True)
+    platform_access_level = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -41,14 +43,24 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
-            "global_role",
-            "is_active",
-            "is_archived",
+            "business_identity",
+            "account_status",
+            "platform_access_level",
             "student_profile",
             "teacher_profile",
             "created_at",
             "updated_at",
         ]
+
+    def get_platform_access_level(self, obj):
+        active_grant = (
+            obj.platform_access_grants.filter(revoked_at__isnull=True)
+            .order_by("-granted_at")
+            .first()
+            if hasattr(obj, "platform_access_grants")
+            else None
+        )
+        return active_grant.access_level if active_grant else None
 
 
 class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
@@ -63,53 +75,66 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
-            "global_role",
-            "is_active",
+            "business_identity",
+            "account_status",
             "student_profile",
             "teacher_profile",
             "password",
         ]
 
-    def _validate_actor_role_scope(self, role):
+    def _validate_actor_scope(self, identity):
         actor = self.context.get("actor")
         if actor is None:
             return
 
-        # Sprint 2 guardrail: ADMIN cannot escalate or manage admin-tier roles.
-        if actor.global_role == User.GlobalRole.ADMIN and role not in {
-            User.GlobalRole.STUDENT,
-            User.GlobalRole.TEACHER,
-        }:
+        actor_levels = get_platform_levels(actor)
+        if (
+            "ADMIN" in actor_levels
+            and "SUPER_ADMIN" not in actor_levels
+            and identity not in {
+                User.BusinessIdentity.STUDENT,
+                User.BusinessIdentity.TEACHER,
+            }
+        ):
             raise serializers.ValidationError(
-                {"global_role": "ADMIN can only create/update STUDENT or TEACHER accounts."}
+                {
+                    "business_identity": (
+                        "ADMIN can only create/update STUDENT or TEACHER accounts."
+                    )
+                }
             )
 
     def _get_active_academic_year(self):
         return AcademicYear.objects.filter(is_active=True, is_archived=False).first()
 
     def validate(self, attrs):
-        role = attrs.get("global_role", getattr(self.instance, "global_role", None))
+        identity = attrs.get(
+            "business_identity",
+            getattr(self.instance, "business_identity", User.BusinessIdentity.STUDENT),
+        )
         student_data = attrs.get("student_profile")
         teacher_data = attrs.get("teacher_profile")
-        self._validate_actor_role_scope(role)
+        self._validate_actor_scope(identity)
 
-        if role == User.GlobalRole.STUDENT and teacher_data is not None:
+        if identity == User.BusinessIdentity.STUDENT and teacher_data is not None:
             raise serializers.ValidationError(
-                {"teacher_profile": "Teacher profile is not allowed for STUDENT role."}
+                {"teacher_profile": "Teacher profile is not allowed for STUDENT identity."}
             )
 
-        if role == User.GlobalRole.TEACHER and student_data is not None:
+        if identity == User.BusinessIdentity.TEACHER and student_data is not None:
             raise serializers.ValidationError(
-                {"student_profile": "Student profile is not allowed for TEACHER role."}
+                {"student_profile": "Student profile is not allowed for TEACHER identity."}
             )
 
-        if role in {User.GlobalRole.ADMIN, User.GlobalRole.SUPER_ADMIN}:
-            if student_data is not None or teacher_data is not None:
-                raise serializers.ValidationError(
-                    "Admin roles must not include student or teacher profile payload."
-                )
+        if identity in {
+            User.BusinessIdentity.ADMINISTRATIVE_STAFF,
+            User.BusinessIdentity.EXTERNAL_SUPERVISOR,
+        } and (student_data is not None or teacher_data is not None):
+            raise serializers.ValidationError(
+                "Staff/external identities must not include student or teacher profile payload."
+            )
 
-        if role == User.GlobalRole.STUDENT:
+        if identity == User.BusinessIdentity.STUDENT:
             active_year = self._get_active_academic_year()
             if active_year is None:
                 raise serializers.ValidationError(
@@ -119,7 +144,17 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
         if self.instance is None and not attrs.get("password"):
             raise serializers.ValidationError({"password": "Password is required."})
 
+        attrs.setdefault("account_status", User.AccountStatus.ACTIVE)
         return attrs
+
+    def _sync_platform_flags(self, user):
+        active_levels = set(
+            user.platform_access_grants.filter(revoked_at__isnull=True).values_list(
+                "access_level", flat=True
+            )
+        )
+        user.is_staff = bool(active_levels)
+        user.is_superuser = PlatformAccessGrant.AccessLevel.SUPER_ADMIN in active_levels
 
     @transaction.atomic
     def create(self, validated_data):
@@ -127,15 +162,9 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
         teacher_data = validated_data.pop("teacher_profile", None)
         password = validated_data.pop("password")
 
-        role = validated_data.get("global_role")
-        if role in {User.GlobalRole.ADMIN, User.GlobalRole.SUPER_ADMIN}:
-            validated_data["is_staff"] = True
-            validated_data["is_superuser"] = role == User.GlobalRole.SUPER_ADMIN
-        else:
-            validated_data["is_staff"] = False
-            validated_data["is_superuser"] = False
-
         user = User.objects.create_user(password=password, **validated_data)
+        self._sync_platform_flags(user)
+        user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
         self._sync_profiles(user, student_data, teacher_data)
         return user
 
@@ -148,24 +177,18 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
         for field, value in validated_data.items():
             setattr(instance, field, value)
 
-        if instance.global_role in {User.GlobalRole.ADMIN, User.GlobalRole.SUPER_ADMIN}:
-            instance.is_staff = True
-            instance.is_superuser = instance.global_role == User.GlobalRole.SUPER_ADMIN
-        else:
-            instance.is_staff = False
-            instance.is_superuser = False
-
         if password:
             instance.set_password(password)
 
+        self._sync_platform_flags(instance)
         instance.save()
         self._sync_profiles(instance, student_data, teacher_data)
         return instance
 
     def _sync_profiles(self, user, student_data, teacher_data):
-        role = user.global_role
+        identity = user.business_identity
 
-        if role == User.GlobalRole.STUDENT:
+        if identity == User.BusinessIdentity.STUDENT:
             active_year = self._get_active_academic_year()
             if active_year is None:
                 raise serializers.ValidationError(
@@ -176,14 +199,18 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             provided_year = effective_student_data.get("academic_year")
             if provided_year is not None and provided_year.id != active_year.id:
                 raise serializers.ValidationError(
-                    {"student_profile": {"academic_year": "Student profile must use the active academic year."}}
+                    {
+                        "student_profile": {
+                            "academic_year": "Student profile must use the active academic year."
+                        }
+                    }
                 )
             effective_student_data["academic_year"] = active_year
             StudentProfile.objects.update_or_create(user=user, defaults=effective_student_data)
             TeacherProfile.objects.filter(user=user).delete()
             return
 
-        if role == User.GlobalRole.TEACHER:
+        if identity == User.BusinessIdentity.TEACHER:
             if teacher_data is not None:
                 TeacherProfile.objects.update_or_create(user=user, defaults=teacher_data)
             else:
@@ -197,27 +224,34 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
 
 class SuperAdminCreateAdminSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    global_role = serializers.ChoiceField(
-        choices=[User.GlobalRole.ADMIN, User.GlobalRole.SUPER_ADMIN],
+    access_level = serializers.ChoiceField(
+        choices=PlatformAccessGrant.AccessLevel.choices,
         required=False,
-        default=User.GlobalRole.ADMIN,
+        default=PlatformAccessGrant.AccessLevel.ADMIN,
     )
 
     class Meta:
         model = User
-        fields = ["matricule", "email", "first_name", "last_name", "password", "global_role"]
+        fields = ["matricule", "email", "first_name", "last_name", "password", "access_level"]
 
-    def validate_global_role(self, value):
-        if value not in {User.GlobalRole.ADMIN, User.GlobalRole.SUPER_ADMIN}:
-            raise serializers.ValidationError("Only ADMIN or SUPER_ADMIN can be created here.")
-        return value
-
+    @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop("password")
-        role = validated_data.get("global_role", User.GlobalRole.ADMIN)
-        return User.objects.create_user(
+        access_level = validated_data.pop("access_level")
+        actor = self.context.get("actor")
+
+        user = User.objects.create_user(
             password=password,
-            is_staff=True,
-            is_superuser=(role == User.GlobalRole.SUPER_ADMIN),
+            business_identity=User.BusinessIdentity.ADMINISTRATIVE_STAFF,
+            account_status=User.AccountStatus.ACTIVE,
             **validated_data,
         )
+        PlatformAccessGrant.objects.create(
+            user=user,
+            access_level=access_level,
+            granted_by=actor,
+        )
+        user.is_staff = True
+        user.is_superuser = access_level == PlatformAccessGrant.AccessLevel.SUPER_ADMIN
+        user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
+        return user

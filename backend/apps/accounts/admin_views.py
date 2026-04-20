@@ -10,7 +10,7 @@ from apps.accounts.admin_serializers import (
     SuperAdminCreateAdminSerializer,
 )
 from apps.accounts.models import User
-from apps.accounts.permissions import IsAdminOrSuperAdmin, IsSuperAdmin
+from apps.accounts.permissions import IsAdminOrSuperAdmin, IsSuperAdmin, get_platform_levels
 from config.pagination import DefaultPageNumberPagination
 
 
@@ -21,13 +21,13 @@ class AdminUserListCreateView(APIView):
     def get(self, request):
         queryset = User.objects.all().order_by("id")
 
-        role = request.query_params.get("global_role")
-        if role:
-            queryset = queryset.filter(global_role=role)
+        business_identity = request.query_params.get("business_identity")
+        if business_identity:
+            queryset = queryset.filter(business_identity=business_identity)
 
-        is_archived = request.query_params.get("is_archived")
-        if is_archived in {"true", "false"}:
-            queryset = queryset.filter(is_archived=(is_archived == "true"))
+        account_status = request.query_params.get("account_status")
+        if account_status:
+            queryset = queryset.filter(account_status=account_status)
 
         paginator = DefaultPageNumberPagination()
         page = paginator.paginate_queryset(queryset, request)
@@ -72,19 +72,23 @@ class AdminUserArchiveView(APIView):
     def post(self, request, pk):
         actor = request.user
         user = get_object_or_404(User, pk=pk)
+        actor_levels = get_platform_levels(actor)
 
-        if actor.global_role == User.GlobalRole.ADMIN and user.global_role not in {
-            User.GlobalRole.STUDENT,
-            User.GlobalRole.TEACHER,
-        }:
+        if (
+            "ADMIN" in actor_levels
+            and "SUPER_ADMIN" not in actor_levels
+            and user.business_identity not in {
+                User.BusinessIdentity.STUDENT,
+                User.BusinessIdentity.TEACHER,
+            }
+        ):
             return Response(
-                {"detail": "ADMIN can only archive STUDENT or TEACHER accounts."},
+                {"detail": "ADMIN can only archive STUDENT or TEACHER identities."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        user.is_archived = True
-        user.is_active = False
-        user.save(update_fields=["is_archived", "is_active", "updated_at"])
+        user.account_status = User.AccountStatus.ARCHIVED
+        user.save(update_fields=["account_status", "is_active", "is_archived", "updated_at"])
         return Response(AdminUserListSerializer(user).data, status=status.HTTP_200_OK)
 
 
@@ -94,8 +98,9 @@ class SuperAdminAdminListCreateView(APIView):
     @extend_schema(tags=["Super Admin"], responses=AdminUserListSerializer(many=True))
     def get(self, request):
         queryset = User.objects.filter(
-            global_role__in=[User.GlobalRole.ADMIN, User.GlobalRole.SUPER_ADMIN]
-        ).order_by("id")
+            platform_access_grants__revoked_at__isnull=True,
+            platform_access_grants__access_level__in=["ADMIN", "SUPER_ADMIN"],
+        ).distinct().order_by("id")
         paginator = DefaultPageNumberPagination()
         page = paginator.paginate_queryset(queryset, request)
         serializer = AdminUserListSerializer(page, many=True)
@@ -103,7 +108,7 @@ class SuperAdminAdminListCreateView(APIView):
 
     @extend_schema(tags=["Super Admin"], request=SuperAdminCreateAdminSerializer, responses=AdminUserListSerializer)
     def post(self, request):
-        serializer = SuperAdminCreateAdminSerializer(data=request.data)
+        serializer = SuperAdminCreateAdminSerializer(data=request.data, context={"actor": request.user})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(AdminUserListSerializer(user).data, status=status.HTTP_201_CREATED)

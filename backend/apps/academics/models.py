@@ -4,6 +4,11 @@ from django.db.models import Q
 
 
 class AcademicYear(models.Model):
+    class AcademicYearStatus(models.TextChoices):
+        ACTIVE = "ACTIVE", "Active"
+        CLOSED = "CLOSED", "Closed"
+        ARCHIVED = "ARCHIVED", "Archived"
+
     id = models.BigAutoField(primary_key=True)
     year = models.CharField(max_length=20, unique=True)
     is_active = models.BooleanField(default=False)
@@ -28,6 +33,18 @@ class AcademicYear(models.Model):
 
     def __str__(self):
         return self.year
+
+    @property
+    def status(self):
+        """
+        Transitional enum-like view.
+        Source of truth remains DB flags until full status-field migration.
+        """
+        if self.is_archived:
+            return self.AcademicYearStatus.ARCHIVED
+        if self.is_active:
+            return self.AcademicYearStatus.ACTIVE
+        return self.AcademicYearStatus.CLOSED
 
     def clean(self):
         if self.is_archived and self.is_active:

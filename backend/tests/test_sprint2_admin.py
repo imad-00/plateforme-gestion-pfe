@@ -2,7 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import StudentProfile, TeacherProfile, User
+from apps.accounts.models import PlatformAccessGrant, StudentProfile, TeacherProfile, User
 from apps.academics.models import AcademicYear
 
 
@@ -43,14 +43,19 @@ def test_super_admin_can_create_admin_account(super_admin_user):
             "first_name": "New",
             "last_name": "Admin",
             "password": "StrongPass123!",
-            "global_role": "ADMIN",
+            "access_level": "ADMIN",
         },
         format="json",
     )
 
     assert response.status_code == 201
     created = User.objects.get(email="newadmin@example.com")
-    assert created.global_role == User.GlobalRole.ADMIN
+    assert created.business_identity == User.BusinessIdentity.ADMINISTRATIVE_STAFF
+    assert PlatformAccessGrant.objects.filter(
+        user=created,
+        access_level=PlatformAccessGrant.AccessLevel.ADMIN,
+        revoked_at__isnull=True,
+    ).exists()
 
 
 @pytest.mark.django_db
@@ -65,14 +70,14 @@ def test_admin_cannot_create_super_admin(admin_user):
             "first_name": "New",
             "last_name": "Super",
             "password": "StrongPass123!",
-            "global_role": "SUPER_ADMIN",
+            "business_identity": "ADMINISTRATIVE_STAFF",
         },
         format="json",
     )
 
     assert response.status_code == 400
     assert (
-        response.json()["global_role"][0]
+        response.json()["business_identity"][0]
         == "ADMIN can only create/update STUDENT or TEACHER accounts."
     )
 
@@ -189,8 +194,7 @@ def test_user_archive_endpoint(admin_user, student_user):
 
     assert response.status_code == 200
     student_user.refresh_from_db()
-    assert student_user.is_archived is True
-    assert student_user.is_active is False
+    assert student_user.account_status == User.AccountStatus.ARCHIVED
 
 
 @pytest.mark.django_db
@@ -201,7 +205,7 @@ def test_student_profile_can_link_to_academic_year(admin_user, student_user):
     response = client.patch(
         f"/api/admin/users/{student_user.id}/",
         {
-            "global_role": "STUDENT",
+            "business_identity": "STUDENT",
             "student_profile": {"academic_year": year.id, "specialite": "AI"},
         },
         format="json",
@@ -226,7 +230,7 @@ def test_user_creation_student_role_creates_or_updates_student_profile(admin_use
             "first_name": "Stu",
             "last_name": "Dent",
             "password": "StrongPass123!",
-            "global_role": "STUDENT",
+            "business_identity": "STUDENT",
             "student_profile": {
                 "academic_year": year.id,
                 "moyenne_generale": "14.50",
@@ -255,7 +259,7 @@ def test_student_creation_fails_without_active_academic_year(admin_user):
             "first_name": "Stu",
             "last_name": "NoActive",
             "password": "StrongPass123!",
-            "global_role": "STUDENT",
+            "business_identity": "STUDENT",
             "student_profile": {"specialite": "SE"},
         },
         format="json",
@@ -279,7 +283,7 @@ def test_student_creation_cannot_use_inactive_academic_year(admin_user):
             "first_name": "Stu",
             "last_name": "WrongYear",
             "password": "StrongPass123!",
-            "global_role": "STUDENT",
+            "business_identity": "STUDENT",
             "student_profile": {"academic_year": inactive_year.id, "specialite": "SE"},
         },
         format="json",
@@ -305,7 +309,7 @@ def test_user_creation_teacher_role_creates_or_updates_teacher_profile(admin_use
             "first_name": "Tea",
             "last_name": "Cher",
             "password": "StrongPass123!",
-            "global_role": "TEACHER",
+            "business_identity": "TEACHER",
             "teacher_profile": {"grade": "MC", "departement": "Informatique"},
         },
         format="json",
@@ -323,13 +327,13 @@ def test_admin_cannot_patch_user_to_admin(admin_user, student_user):
 
     response = client.patch(
         f"/api/admin/users/{student_user.id}/",
-        {"global_role": "ADMIN"},
+        {"business_identity": "ADMINISTRATIVE_STAFF"},
         format="json",
     )
 
     assert response.status_code == 400
     assert (
-        response.json()["global_role"][0]
+        response.json()["business_identity"][0]
         == "ADMIN can only create/update STUDENT or TEACHER accounts."
     )
 
@@ -340,13 +344,13 @@ def test_admin_cannot_patch_user_to_super_admin(admin_user, teacher_user):
 
     response = client.patch(
         f"/api/admin/users/{teacher_user.id}/",
-        {"global_role": "SUPER_ADMIN"},
+        {"business_identity": "ADMINISTRATIVE_STAFF"},
         format="json",
     )
 
     assert response.status_code == 400
     assert (
-        response.json()["global_role"][0]
+        response.json()["business_identity"][0]
         == "ADMIN can only create/update STUDENT or TEACHER accounts."
     )
 
@@ -360,7 +364,7 @@ def test_admin_list_endpoints_are_paginated(admin_user):
             matricule=f"STU-P-{idx}",
             email=f"stu-p-{idx}@example.com",
             password="Testpass123!",
-            global_role=User.GlobalRole.STUDENT,
+            business_identity=User.BusinessIdentity.STUDENT,
         )
 
     users_response = client.get("/api/admin/users/")

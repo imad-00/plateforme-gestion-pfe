@@ -1,6 +1,6 @@
 import pytest
 
-from apps.accounts.models import StudentProfile, TeacherProfile, User
+from apps.accounts.models import PlatformAccessGrant, StudentProfile, TeacherProfile, User
 
 
 @pytest.fixture
@@ -13,16 +13,36 @@ def user_factory(db):
         global_role=User.GlobalRole.STUDENT,
         is_active=True,
         is_archived=False,
+        business_identity=None,
+        account_status=None,
         is_staff=False,
         is_superuser=False,
         first_name="",
         last_name="",
+        with_platform_access=False,
     ):
+        if business_identity is None:
+            business_identity = {
+                User.GlobalRole.STUDENT: User.BusinessIdentity.STUDENT,
+                User.GlobalRole.TEACHER: User.BusinessIdentity.TEACHER,
+                User.GlobalRole.ADMIN: User.BusinessIdentity.ADMINISTRATIVE_STAFF,
+                User.GlobalRole.SUPER_ADMIN: User.BusinessIdentity.ADMINISTRATIVE_STAFF,
+            }.get(global_role, User.BusinessIdentity.STUDENT)
+
+        if account_status is None:
+            account_status = (
+                User.AccountStatus.ARCHIVED
+                if is_archived
+                else (User.AccountStatus.ACTIVE if is_active else User.AccountStatus.SUSPENDED)
+            )
+
         user = User.objects.create_user(
             email=email,
             matricule=matricule,
             password=password,
             global_role=global_role,
+            business_identity=business_identity,
+            account_status=account_status,
             is_active=is_active,
             is_archived=is_archived,
             is_staff=is_staff,
@@ -35,6 +55,14 @@ def user_factory(db):
             StudentProfile.objects.create(user=user)
         if global_role == User.GlobalRole.TEACHER:
             TeacherProfile.objects.create(user=user)
+
+        if with_platform_access:
+            level = (
+                PlatformAccessGrant.AccessLevel.SUPER_ADMIN
+                if global_role == User.GlobalRole.SUPER_ADMIN
+                else PlatformAccessGrant.AccessLevel.ADMIN
+            )
+            PlatformAccessGrant.objects.create(user=user, access_level=level)
 
         return user
 
@@ -69,9 +97,11 @@ def admin_user(user_factory):
         matricule="ADM001",
         email="admin@example.com",
         global_role=User.GlobalRole.ADMIN,
+        business_identity=User.BusinessIdentity.ADMINISTRATIVE_STAFF,
         is_staff=True,
         first_name="Admin",
         last_name="One",
+        with_platform_access=True,
     )
 
 
@@ -81,8 +111,10 @@ def super_admin_user(user_factory):
         matricule="SADM001",
         email="superadmin@example.com",
         global_role=User.GlobalRole.SUPER_ADMIN,
+        business_identity=User.BusinessIdentity.ADMINISTRATIVE_STAFF,
         is_staff=True,
         is_superuser=True,
         first_name="Super",
         last_name="Admin",
+        with_platform_access=True,
     )

@@ -1,742 +1,444 @@
 # PFE Management Platform Backend
-## Technical Dossier (Sprint 0 to Sprint 3)
+## Technical Dossier (Sprint 0 to Sprint 4)
 
-Version date: 2026-04-14
-
----
-
-## 1) Project Context and Product Intention
-
-This backend powers a PFE (Final Engineering Project) management platform for an engineering school.
-
-The product vision for V1 is institutional workflow management, not internal agile team collaboration.
-
-### V1 scope focus
-
-- academic year governance
-- identity and role management
-- subject (topic) proposal and moderation workflow
-- progressive setup for later phases (campaigns, teams, assignment, deliverables, defense)
-
-### Explicitly excluded so far
-
-- member-by-member task tracking
-- kanban boards
-- chat/messaging systems
-- recommendation engines
-- assignment algorithm (future sprint)
-- defense planning workflow (future sprint)
+Version date: 2026-04-19
 
 ---
 
-## 2) Why this Technology Stack
+## 1) Project Context and Sprint 4 Intent
 
-### Django 5
+This backend serves a PFE (Final Engineering Project) institutional workflow platform.
 
-Used as the core framework because it gives:
+Sprint 0-3 already delivered a working technical base and a first domain slice (auth, academic year governance, subject lifecycle).
 
-- strong ORM with relational integrity
-- mature auth system extensibility (custom user, custom backend)
-- clean app modularization
-- robust admin interface for academic demos and manual operations
+Sprint 4 is a **domain realignment sprint**, not a feature-expansion sprint.
 
-### Django REST Framework (DRF)
-
-Used for API layer because it provides:
-
-- serializers with explicit validation
-- authentication/permission integration
-- predictable request/response patterns
-- pagination/filter readiness
-
-### djangorestframework-simplejwt
-
-Used for stateless API authentication:
-
-- access tokens for short-lived API access
-- refresh tokens for session continuity
-- clean integration with DRF authentication classes
-
-### PostgreSQL
-
-Chosen as primary transactional database because:
-
-- strong ACID guarantees
-- relational modeling fits school workflows
-- proper constraints/indexing support
-
-### Redis + Celery
-
-Prepared for asynchronous workloads:
-
-- Redis as broker/result backend and caching layer
-- Celery worker already wired for future long tasks (imports, notifications, batch jobs)
-
-### MinIO (S3-compatible) + django-storages
-
-Prepared for file storage at scale:
-
-- object storage semantics, S3-compatible
-- local dev parity with cloud-compatible model
-- ready for deliverables in later sprints
-
-### drf-spectacular
-
-Used for OpenAPI schema generation and Swagger UI:
-
-- explicit API contract visibility
-- easier teacher/reviewer demos
-- frontend-backend contract clarity
-
-### pytest + pytest-django
-
-Chosen for integration-style testing:
-
-- concise test style
-- database transaction support
-- endpoint-level behavior validation
-
-### Docker + Docker Compose
-
-Used for reproducible local environment:
-
-- consistent setup across developer machines
-- easy bootstrapping (web, db, redis, minio, worker)
+Its purpose is to refactor the architecture toward the updated domain model while preserving validated foundations.
 
 ---
 
-## 3) High-Level Architecture
+## 2) Technology Stack (Preserved)
 
-## 3.1 Project structure
+- Django 5
+- Django REST Framework
+- SimpleJWT
+- PostgreSQL
+- Redis + Celery
+- MinIO (S3 compatible)
+- drf-spectacular
+- pytest + pytest-django
+- Docker Compose
 
-- `backend/config`: settings, URL routing, celery bootstrap, health API
-- `backend/apps/accounts`: identity, auth, roles, profiles, account admin APIs
-- `backend/apps/academics`: academic year domain and admin APIs
-- `backend/apps/topics`: subject proposal lifecycle and catalog APIs
-- placeholder apps prepared for later sprints: campaigns, teams, assignments, projects, deliverables, defenses, archives, audit
+Why unchanged:
 
-## 3.2 Settings strategy
+- stack remains technically sound
+- no infrastructure redesign was required for domain realignment
+- focus stayed on domain and access model evolution
 
-- split settings files exist (`base.py`, `local.py`, `production.py`)
-- runtime values loaded from environment (`backend/.env`)
-- sensitive values are not hardcoded
+---
 
-## 3.3 API prefix policy
+## 3) Architecture Baseline (Still Valid)
 
-All functional API routes are under `/api/` and do not use `/api/v1/`.
+Main apps:
 
-## 3.4 Current global URL map
+- `accounts`: identity, auth, profiles, platform access grants, account admin APIs
+- `academics`: academic year governance
+- `campaigns`: campaign phase domain (new in Sprint 4)
+- `topics`: subject lifecycle and catalog
+- placeholders kept for future: teams, assignments, deliverables, defenses, archives, audit, projects
 
-- `/admin/` Django admin UI
-- `/api/health/`
-- `/api/auth/login/`, `/api/auth/refresh/`, `/api/auth/me/`
+Global API prefix remains `/api/`.
+
+---
+
+## 4) Sprint 4 Realignment Summary
+
+## 4.1 Why refactor was needed
+
+Before Sprint 4, the model depended mostly on:
+
+- `global_role`
+- `is_active`/`is_archived` booleans
+- teacher/student profile assumptions
+
+Updated requirements introduced a clearer domain split:
+
+1. business identity (who the actor is)
+2. platform privilege (who can administrate platform-level operations)
+3. contextual roles (future sprint scope)
+
+Sprint 4 therefore introduced foundational entities for this split while keeping backward compatibility.
+
+## 4.2 What changed concretely
+
+- `User` now includes:
+  - `business_identity`
+  - `account_status`
+- new `PlatformAccessGrant` model for platform admin privileges
+- new `CampaignPhase` model linked to `AcademicYear`
+- `Subject` evolved with:
+  - `ASSIGNED` state
+  - optional attachment metadata fields
+
+## 4.3 What stayed intentionally unchanged
+
+- login by matricule/email
+- existing auth endpoints
+- existing academic year endpoints
+- existing subject workflow endpoints
+- archive-not-delete philosophy
+
+## 4.4 Sprint 4 execution plan (implemented)
+
+The Sprint 4 refactor was executed in controlled steps:
+
+1. Domain model realignment:
+   - `User` extended with `business_identity` and `account_status`
+   - `PlatformAccessGrant` introduced for platform-level privileges
+   - `CampaignPhase` introduced for campaign governance windows
+   - `Subject` extended with `ASSIGNED` and attachment metadata
+2. Validation and permission alignment:
+   - account-access checks now support `account_status`
+   - permissions prefer active platform grants
+   - legacy fallback kept but restricted to avoid over-granting
+3. API and migrations:
+   - admin/super-admin APIs added for grants and campaign phases
+   - non-destructive migrations and data backfill delivered
+4. Testing and documentation:
+   - integration tests extended on grants, phases, subject transitions
+   - technical dossier updated to reflect implemented vs prepared scope
+
+---
+
+## 5) Complete Domain Model Inventory (Post Sprint 4)
+
+## 5.1 Implemented core models
+
+### App `accounts`
+
+#### `User`
+
+Core auth anchor remains the same table.
+
+Key fields now:
+
+- identity/auth: `matricule`, `email`, password, names
+- legacy privilege: `global_role` (kept for compatibility)
+- new identity axis: `business_identity`
+  - `STUDENT`
+  - `TEACHER`
+  - `ADMINISTRATIVE_STAFF`
+  - `EXTERNAL_SUPERVISOR`
+- new lifecycle axis: `account_status`
+  - `ACTIVE`
+  - `SUSPENDED`
+  - `ARCHIVED`
+- compatibility flags: `is_active`, `is_archived`, `is_staff`, `is_superuser`
+
+Compatibility strategy:
+
+- `account_status` is now explicit domain status
+- legacy booleans are still present and synchronized for safe transition
+
+#### `StudentProfile`
+
+- still present
+- still linked to `AcademicYear`
+- used by current implemented flows
+
+#### `TeacherProfile`
+
+- still present
+- used by current implemented flows
+
+#### `AdministrativeStaffProfile` (new)
+
+- foundational profile model for staff-type users
+
+#### `ExternalSupervisorProfile` (new)
+
+- foundational profile model for external supervisors
+
+#### `PlatformAccessGrant` (new)
+
+Separates platform privilege from business identity.
+
+Key fields:
+
+- `user`
+- `access_level`: `ADMIN`, `SUPER_ADMIN`
+- `granted_by`
+- `granted_at`
+- `revoked_at`
+
+Rules:
+
+- only `TEACHER` and `ADMINISTRATIVE_STAFF` identities may receive grants
+- one active grant per user at a time
+- grants are revocable (not hard deleted)
+
+### App `academics`
+
+#### `AcademicYear`
+
+Still the institutional source of truth.
+
+Current rules kept:
+
+- one active year at a time
+- archived year cannot be active
+- activating a year archives/deactivates previous years
+
+Sprint 4 note:
+
+- computed calendar helper remains utility only
+- business decisions rely on DB active year
+
+### App `campaigns`
+
+#### `CampaignPhase` (new)
+
+Introduced to prepare campaign-driven workflow.
+
+Fields:
+
+- `academic_year`
+- `phase_type`
+- `start_at`
+- `end_at` (nullable)
+- `display_order`
+- `is_archived`
+
+Supported phase types:
+
+- `ACCOUNT_SETUP`
+- `SUBJECT_SUBMISSION_AND_REVIEW`
+- `FIRST_WISH_SELECTION`
+- `RESULTS_AND_APPEALS`
+- `SECOND_WISH_SELECTION`
+- `FINAL_RESULTS_AND_ASSIGNMENT`
+- `WORK_PERIOD`
+- `DEFENSE_PERIOD`
+
+### App `topics`
+
+#### `Subject`
+
+Sprint 3 lifecycle preserved and extended.
+
+Now includes:
+
+- new status: `ASSIGNED`
+- optional attachment metadata:
+  - `attachment_key`
+  - `attachment_original_name`
+  - `attachment_mime_type`
+  - `attachment_size_bytes`
+
+Status set:
+
+- `DRAFT`
+- `SUBMITTED`
+- `APPROVED`
+- `REJECTED`
+- `ASSIGNED`
+- `ARCHIVED`
+
+---
+
+## 6) Identity and Access Strategy (Revised)
+
+## 6.1 Business identity
+
+Who the person is in the institution:
+
+- Student
+- Teacher
+- Administrative Staff
+- External Supervisor
+
+## 6.2 Platform privilege
+
+Who can administrate platform-level operations:
+
+- modeled by `PlatformAccessGrant`
+- independent from business identity
+
+## 6.3 Transitional compatibility
+
+- old `global_role` is still present
+- permission layer now prefers platform grants
+- fallback to legacy role is kept for records without grant history
+- if a user has grant history and no active grant, fallback is not used (revocation remains effective)
+
+## 6.4 Contextual roles
+
+Not implemented yet (future sprint).
+
+Prepared by architecture only.
+
+---
+
+## 7) Permissions Refactor (Sprint 4)
+
+Current permission model distinguishes:
+
+- authenticated + active account
+- platform admin privileges
+- super admin privileges
+- teacher-or-above access for teacher domain endpoints
+
+Important change:
+
+- permissions no longer depend only on `global_role`
+- platform access grants are now first-class
+
+---
+
+## 8) API Surface (Post Sprint 4)
+
+## 8.1 Preserved endpoints
+
+- `/api/auth/login/`
+- `/api/auth/refresh/`
+- `/api/auth/me/`
 - `/api/admin/academic-years/...`
 - `/api/admin/users/...`
 - `/api/super-admin/admins/`
 - `/api/teacher/subjects/...`
 - `/api/admin/subjects/...`
-- `/api/subjects/...` (public catalog for authenticated non-archived users)
-- `/api/schema/`, `/api/docs/`
+- `/api/subjects/...`
+
+## 8.2 New Sprint 4 endpoints
+
+### Platform access
+
+- `GET /api/admin/platform-access-grants/`
+- `POST /api/super-admin/platform-access-grants/`
+- `POST /api/super-admin/platform-access-grants/{id}/revoke/`
+
+### Campaign phases
+
+- `GET /api/admin/campaign-phases/`
+- `POST /api/admin/campaign-phases/`
+- `GET /api/admin/campaign-phases/{id}/`
+- `PATCH /api/admin/campaign-phases/{id}/`
+- `POST /api/admin/campaign-phases/{id}/archive/`
 
 ---
 
-## 4) Environment and Runtime Configuration
+## 9) AcademicYear and Campaign Binding Rules
 
-Variables documented in `backend/.env.example`.
+The institutional rule is enforced:
 
-## 4.1 Core
-
-- `DJANGO_SETTINGS_MODULE`
-- `SECRET_KEY`
-- `DEBUG`
-- `ALLOWED_HOSTS`
-- `CSRF_TRUSTED_ORIGINS`
-
-## 4.2 Database
-
-- `DATABASE_URL`
-- `POSTGRES_DB`
-- `POSTGRES_USER`
-- `POSTGRES_PASSWORD`
-
-## 4.3 Cache and async
-
-- `REDIS_URL`
-
-## 4.4 JWT and API behavior
-
-- `SIMPLE_JWT_ACCESS_MINUTES` (default 15)
-- `SIMPLE_JWT_REFRESH_DAYS` (default 7)
-- `API_PAGE_SIZE`
-- `API_MAX_PAGE_SIZE`
-
-## 4.5 MinIO / S3-compatible storage
-
-- `USE_S3`
-- `MINIO_ENDPOINT`
-- `MINIO_ACCESS_KEY`
-- `MINIO_SECRET_KEY`
-- `MINIO_BUCKET_NAME`
-- `MINIO_REGION`
-- `MINIO_USE_SSL`
-- `MINIO_ROOT_USER`
-- `MINIO_ROOT_PASSWORD`
+- campaign operations are expected to bind to active DB academic year
+- no active year -> creation operations fail with readable validation errors
+- public subject catalog returns empty list cleanly when no active year exists
 
 ---
 
-## 5) Complete Data Model Inventory (All Apps)
+## 10) Subject Workflow Compatibility After Refactor
 
-This section explicitly lists **all model files in the repository** and clarifies which models are implemented now vs placeholders for future sprints.
+Sprint 3 behavior retained:
 
-## 5.1 Implemented models (real DB tables today)
+- teacher creates draft
+- submits/resubmits
+- admin approves/rejects
+- archive removes from catalog visibility
 
-### App: `accounts`
+Sprint 4 extension:
 
-#### Model: `User` (`accounts_user`)
-
-Purpose: core identity and authentication record for every actor.
-
-Fields:
-
-- `id` (BigAutoField, PK)
-- `matricule` (unique, business identifier, login-compatible)
-- `email` (unique)
-- `first_name`
-- `last_name`
-- `global_role` (`STUDENT`, `TEACHER`, `ADMIN`, `SUPER_ADMIN`)
-- `is_active`
-- `is_archived`
-- `is_staff`
-- `is_superuser` (from `PermissionsMixin`)
-- `created_at`
-- `updated_at`
-
-Indexes:
-
-- by `global_role`
-- by `is_archived`
-
-Design choices:
-
-- `USERNAME_FIELD = "matricule"` (primary authentication identifier)
-- custom backend supports login by either matricule or email
-- archived users are blocked at auth and permission levels
-
-#### Model: `StudentProfile` (`accounts_student_profile`)
-
-Purpose: student-specific attributes separated from core identity.
-
-Fields:
-
-- `user` (OneToOne -> `accounts.User`)
-- `academic_year` (FK -> `academics.AcademicYear`, nullable for migration/transition flexibility)
-- `moyenne_generale` (nullable)
-- `specialite` (nullable)
-- `created_at`
-- `updated_at`
-
-Business/validation note:
-
-- admin serializers now enforce linking student profile to active academic year when provided.
-
-#### Model: `TeacherProfile` (`accounts_teacher_profile`)
-
-Purpose: teacher-specific attributes separated from core identity.
-
-Fields:
-
-- `user` (OneToOne -> `accounts.User`)
-- `grade` (nullable)
-- `departement` (nullable)
-- `created_at`
-- `updated_at`
+- `ASSIGNED` status is now part of lifecycle model for future assignment sprint
+- attachment metadata fields added for richer subject description
 
 ---
 
-### App: `academics`
+## 11) Status Normalization Strategy
 
-#### Model: `AcademicYear` (`academics_academic_year`)
+Full replacement of all legacy booleans was intentionally avoided to reduce migration risk.
 
-Purpose: institutional academic cycle anchor for all year-bound operations.
+Applied incremental strategy:
 
-Fields:
+- introduced `User.account_status` enum
+- kept legacy booleans for compatibility and synchronized behavior
+- kept `AcademicYear` booleans with explicit governance rules
+- expanded `Subject` status as primary lifecycle direction
 
-- `id` (BigAutoField, PK)
-- `year` (string label like `2025/2026`, unique)
-- `is_active`
-- `is_archived`
-- `created_at`
-- `updated_at`
-
-Indexes:
-
-- by `is_active`
-- by `is_archived`
-
-DB constraint:
-
-- partial unique constraint on active rows to guarantee only one active year.
-
-Application rules:
-
-- archived year cannot be active
-- only current computed year label can be activated
-- activating one year deactivates+archives all others in transaction
-- helper used: `get_current_academic_year_label(start_month=9)`
+This balances correctness and stability for an academic project with ongoing sprint evolution.
 
 ---
 
-### App: `topics`
+## 12) Implemented vs Prepared vs Not Yet Implemented
 
-#### Model: `Subject` (`topics_subject`)
+## Implemented now
 
-Purpose: Sprint 3 core entity for PFE topic proposal lifecycle.
+- auth + JWT
+- academic year governance
+- admin user management
+- subject lifecycle
+- platform access grant model and APIs
+- campaign phase model and admin APIs
 
-Fields:
+## Prepared (foundation ready, full workflow not yet implemented)
 
-- `id` (BigAutoField, PK)
-- `title`
-- `description`
-- `subject_type`:
-  - `RESEARCH_PROJECT`
-  - `APPLIED_PROJECT`
-  - `STARTUP_PROJECT`
-- `technologies`
-- `keywords`
-- `status`:
-  - `DRAFT`
-  - `SUBMITTED`
-  - `APPROVED`
-  - `REJECTED`
-  - `ARCHIVED`
-- `proposed_by` (FK -> `accounts.User`)
-- `academic_year` (FK -> `academics.AcademicYear`)
-- `rejection_reason`
-- `submitted_at`
-- `reviewed_at`
-- `reviewed_by` (FK -> `accounts.User`, nullable)
-- `is_archived`
-- `created_at`
-- `updated_at`
+- contextual-role-driven team logic
+- campaign-phase-driven hard enforcement across all future modules
+- subject assignment workflow automation
 
-Indexes:
+## Not implemented yet
 
-- by `status`
-- by `is_archived`
-- by `academic_year`
-- by `proposed_by`
-
-Model-level consistency:
-
-- cannot link subject to archived academic year
-- archived subject must have status `ARCHIVED`
-
-Workflow-level consistency (serializer/service layer):
-
-- teacher edit only for `DRAFT` and `REJECTED`
-- submit/resubmit/approve/reject transitions validated explicitly
-- transition actions enforce that subject belongs to current active academic year
-
-## 5.2 Placeholder model files (intentionally empty for now)
-
-The following apps already exist structurally, but their `models.py` currently contains only placeholder comments by design:
-
-- `apps.campaigns.models`
-- `apps.teams.models`
-- `apps.assignments.models`
-- `apps.projects.models`
-- `apps.deliverables.models`
-- `apps.defenses.models`
-- `apps.archives.models`
-- `apps.audit.models`
-
-Reason:
-
-- these domains are planned for future sprints
-- keeping placeholders now avoids architecture reshuffling later
-- no fake/temporary business models were introduced prematurely
-
-## 5.3 Current relationship map (implemented entities only)
-
-- `User` 1 <-> 1 `StudentProfile` (optional depending on role)
-- `User` 1 <-> 1 `TeacherProfile` (optional depending on role)
-- `AcademicYear` 1 -> N `StudentProfile`
-- `AcademicYear` 1 -> N `Subject`
-- `User` (teacher) 1 -> N `Subject` via `proposed_by`
-- `User` (admin/super-admin) 1 -> N `Subject` via `reviewed_by`
-
-## 5.4 Why profiles are separate from `User`
-
-- prevents polluting core auth identity with role-specific attributes
-- keeps login/session/auth concerns isolated from student/teacher metadata
-- allows controlled role changes with profile synchronization rules
-- keeps API payloads explicit and future-ready for richer role data
+- teams and participations
+- wishlists
+- appeals
+- deliverables
+- defense workflow
+- audit trail system
+- notification system
 
 ---
 
-## 6) Security and Access Model
+## 13) Tests and Quality Gate
 
-## 6.1 Authentication
+Test status after Sprint 4 realignment:
 
-JWT-based auth with SimpleJWT.
-
-- login endpoint issues `access` + `refresh`
-- refresh endpoint provides renewed access
-- default DRF auth class is JWT
-
-## 6.2 Custom login flow
-
-`POST /api/auth/login/` accepts:
-
-- `identifier` (matricule or email)
-- `password`
-
-Validation sequence:
-
-1. resolve user by identifier
-2. reject if archived
-3. reject if inactive
-4. authenticate via custom backend
-5. issue JWT tokens
-
-## 6.3 Permissions classes
-
-- `IsAuthenticatedAndNotArchived`
-- `IsAdminOrSuperAdmin`
-- `IsSuperAdmin`
-- `IsTeacherOrAbove`
-
-## 6.4 Role governance
-
-- ADMIN/SUPER_ADMIN can access admin endpoints
-- SUPER_ADMIN-only endpoint for admin account provisioning
-- ADMIN cannot escalate users to ADMIN/SUPER_ADMIN through admin user API
+- full suite passing
+- coverage now includes:
+  - platform access grant constraints and permissions
+  - campaign phase lifecycle constraints
+  - subject status extension compatibility
+  - backward compatibility of Sprint 1-3 core behavior
 
 ---
 
-## 7) Sprint-by-Sprint Technical Delivery
+## 14) Migration Impact
 
-## Sprint 0 (Foundation)
+Sprint 4 introduces new migrations for:
 
-Delivered:
+- accounts: identity/status fields + new profile/grant models + data backfill
+- campaigns: initial campaign phase model
+- topics: subject status extension + attachment metadata fields
 
-- modular Django project scaffold
-- required apps prepared
-- environment-based settings
-- Docker Compose stack (web, worker, postgres, redis, minio)
-- DRF + drf-spectacular wiring
-- custom user model baseline
-- Celery + Redis base config
-- MinIO integration foundation
-- healthcheck endpoint
-- pytest baseline and smoke tests
-
-Primary objective achieved: solid base with low structural debt.
-
-## Sprint 1 (Identity and Auth)
-
-Delivered:
-
-- custom auth backend for matricule/email login
-- JWT auth endpoints
-- profile-aware user serialization
-- StudentProfile and TeacherProfile models
-- archived/inactive login protections
-- auth integration tests
-
-Endpoints:
-
-- `POST /api/auth/login/`
-- `POST /api/auth/refresh/`
-- `GET /api/auth/me/`
-
-## Sprint 2 (Academic base + account administration)
-
-Delivered:
-
-- AcademicYear model and admin management APIs
-- account management APIs for admin/super-admin
-- profile-aware create/update for STUDENT/TEACHER
-- logical archive endpoints (users, academic years)
-- pagination for admin list endpoints
-- role-scope restrictions (no admin escalation by ADMIN)
-- integration tests for admin workflows
-
-Endpoints (key):
-
-- `GET/POST /api/admin/academic-years/`
-- `GET/PATCH /api/admin/academic-years/{id}/`
-- `POST /api/admin/academic-years/{id}/archive/`
-- `GET/POST /api/admin/users/`
-- `GET/PATCH /api/admin/users/{id}/`
-- `POST /api/admin/users/{id}/archive/`
-- `GET/POST /api/super-admin/admins/`
-
-## Sprint 3 (Subject lifecycle)
-
-Delivered:
-
-- Subject model and workflow statuses
-- teacher personal subject management APIs
-- admin moderation APIs
-- authenticated public approved-subject catalog
-- workflow transition safeguards
-- integration tests for end-to-end lifecycle
-
-Teacher endpoints:
-
-- `GET/POST /api/teacher/subjects/`
-- `GET/PATCH /api/teacher/subjects/{id}/`
-- `POST /api/teacher/subjects/{id}/submit/`
-- `POST /api/teacher/subjects/{id}/resubmit/`
-
-Admin moderation endpoints:
-
-- `GET /api/admin/subjects/`
-- `GET /api/admin/subjects/{id}/`
-- `POST /api/admin/subjects/{id}/approve/`
-- `POST /api/admin/subjects/{id}/reject/`
-- `POST /api/admin/subjects/{id}/archive/`
-
-Public catalog endpoints:
-
-- `GET /api/subjects/`
-- `GET /api/subjects/{id}/`
+Migration strategy was non-destructive and incremental.
 
 ---
 
-## 8) Core Business Rules Implemented in Code
+## 15) Backward Compatibility Notes
 
-## 8.1 No hard delete
-
-Implemented strategy:
-
-- use `is_archived` flags
-- archive endpoints instead of DELETE for critical entities
-
-## 8.2 Academic year governance
-
-- only one active year allowed (DB + application flow)
-- active year must match computed current label
-- activating year archives all other years
-
-## 8.3 User lifecycle constraints
-
-- archived users cannot authenticate
-- inactive users cannot authenticate
-- all protected API access blocks archived users
-
-## 8.4 Subject workflow constraints
-
-- create starts at `DRAFT`
-- teacher edits only `DRAFT` or `REJECTED`
-- submit: `DRAFT -> SUBMITTED`
-- resubmit: `REJECTED -> SUBMITTED`
-- approve/reject only from `SUBMITTED`
-- reject requires non-empty reason
-- archive marks `is_archived=True` and `status=ARCHIVED`
-
-## 8.5 Academic year binding for subject actions
-
-- subjects must use active, non-archived academic year
-- teacher create/update aligns to current active year
-- moderation transitions validate that subject belongs to active year
-- public catalog only shows approved + non-archived subjects in active year
+- existing login flow preserved
+- existing core endpoints preserved
+- legacy `global_role` remains functional during transition
+- platform grants introduced without immediate hard break of old records
+- archived/inactive access protections remain enforced
 
 ---
 
-## 9) API Flow Walkthroughs
+## 16) Next Sprint Direction (Prepared by Sprint 4)
 
-## 9.1 Login flow
+Sprint 5 can now implement domain features with less rewrite risk:
 
-1. client sends identifier/password
-2. backend resolves user by matricule/email
-3. backend checks archived/inactive flags
-4. backend authenticates credentials
-5. backend returns JWT tokens + user payload
+- campaign phases enforcement in business actions
+- team entities and participation states
+- subject assignment and team locking
+- first/second wish workflow
 
-## 9.2 Admin account provisioning flow
-
-1. super admin logs in
-2. calls `/api/super-admin/admins/` POST
-3. creates ADMIN (or SUPER_ADMIN if allowed by payload)
-4. new admin gets staff-level access to admin APIs
-
-## 9.3 Student/teacher account management flow
-
-1. admin creates user via `/api/admin/users/`
-2. sets role STUDENT/TEACHER
-3. optional nested profile payload accepted per role
-4. serializer enforces profile consistency by role
-
-## 9.4 Subject proposal flow
-
-1. teacher creates draft in personal area
-2. teacher updates while draft/rejected
-3. teacher submits for moderation
-4. admin approves or rejects with reason
-5. rejected can be revised and resubmitted
-6. approved subject appears in public catalog
-
-## 9.5 Academic year transition flow
-
-1. admin posts/patches year with `is_active=true`
-2. validation enforces current-year label
-3. transaction archives/deactivates all other years
-4. active year becomes single source for new actions
-
----
-
-## 10) Transaction and Consistency Strategy
-
-- critical state transitions wrapped with `transaction.atomic`
-- serializer validation used for request-level business invariants
-- model `clean()` used for local model consistency
-- DB constraint used for single active academic year guarantee
-
-Why this split:
-
-- serializer layer handles multi-record orchestration and role-aware logic
-- model layer protects intrinsic record consistency
-- database layer enforces hard invariant against race conditions
-
----
-
-## 11) Documentation and Developer Experience
-
-## 11.1 Swagger/OpenAPI
-
-- schema: `/api/schema/`
-- UI: `/api/docs/`
-
-Tags currently used:
-
-- `Auth`
-- `Academic Years`
-- `Admin Users`
-- `Super Admin`
-- `Teacher Subjects`
-- `Admin Subjects`
-- `Subjects Catalog`
-
-## 11.2 Django admin UI
-
-Available at `/admin/` with humanized registration for:
-
-- User
-- StudentProfile
-- TeacherProfile
-- AcademicYear
-
-Purpose:
-
-- demonstration
-- manual verification
-- quick inspection without building custom frontend screens
-
----
-
-## 12) Testing Strategy and Current Status
-
-Test tooling:
-
-- pytest + pytest-django
-- DRF APIClient
-- JWT-authenticated integration test style
-
-Coverage focus:
-
-- auth flows
-- role access protections
-- admin user management constraints
-- academic year behavior
-- subject lifecycle transitions
-- catalog visibility filtering
-
-Current result in local containerized run:
-
-- all tests passing (`49 passed`)
-
-Note:
-
-- warning about short JWT secret in local env is expected with placeholder secret
-- production must use long random secret keys
-
----
-
-## 13) Operational Runbook (Local)
-
-1. copy env template
-
-- `cp backend/.env.example backend/.env`
-
-2. start stack
-
-- `docker compose up --build`
-
-3. run migrations
-
-- `docker compose run --rm web python manage.py migrate`
-
-4. run checks/tests
-
-- `docker compose run --rm web python manage.py check`
-- `docker compose run --rm web pytest -q`
-
-5. access interfaces
-
-- API docs: `http://localhost:8000/api/docs/`
-- health: `http://localhost:8000/api/health/`
-- admin: `http://localhost:8000/admin/`
-
----
-
-## 14) Current Constraints and Intentional Trade-offs
-
-Intentional constraints:
-
-- no DELETE endpoints for domain entities
-- no contextual roles yet (only global role on User)
-- no campaign window logic yet
-- no groups/wishes/assignment algorithm yet
-- no deliverables/defense workflows yet
-
-Trade-off rationale:
-
-- prioritized correctness and clarity over early complexity
-- avoided building speculative abstractions before concrete workflows
-- kept code easy to explain in academic evaluation context
-
----
-
-## 15) How the Project Will Evolve (Planned Direction)
-
-The current backend is intentionally prepared for progressive sprint expansion.
-
-Likely future directions:
-
-- campaign windows and institutional calendars
-- team formation workflows
-- wishes/preferences submission
-- assignment logic and validation loops
-- deliverable lifecycle and storage enforcement
-- defense planning, minutes, and archival process
-- audit trails and richer observability
-
-The architecture is already modularized to support these additions without rewriting the identity and governance core.
-
----
-
-## 16) Summary for Teacher Review
-
-This backend currently demonstrates:
-
-- a production-style technical foundation
-- clear identity and role model with custom auth
-- controlled academic-year governance with strict invariants
-- complete subject proposal lifecycle with moderation
-- logically archived data strategy
-- documented and test-backed API behavior
-- clear separation of concerns between apps, serializers, views, permissions, and settings
-
-In short, Sprint 0 to Sprint 3 delivers a stable institutional core that is ready for domain expansion while staying pedagogical and maintainable.
+Sprint 4 goal achieved: foundational realignment without destabilizing validated existing functionality.

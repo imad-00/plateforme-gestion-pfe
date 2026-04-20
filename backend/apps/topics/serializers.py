@@ -31,6 +31,10 @@ class TeacherSubjectListSerializer(serializers.ModelSerializer):
             "subject_type",
             "technologies",
             "keywords",
+            "attachment_key",
+            "attachment_original_name",
+            "attachment_mime_type",
+            "attachment_size_bytes",
             "status",
             "academic_year",
             "rejection_reason",
@@ -52,6 +56,10 @@ class TeacherSubjectWriteSerializer(serializers.ModelSerializer):
             "subject_type",
             "technologies",
             "keywords",
+            "attachment_key",
+            "attachment_original_name",
+            "attachment_mime_type",
+            "attachment_size_bytes",
             "academic_year",
         ]
         extra_kwargs = {"academic_year": {"required": False}}
@@ -66,7 +74,7 @@ class TeacherSubjectWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         user = self.context["request"].user
-        if user.global_role != User.GlobalRole.TEACHER:
+        if getattr(user, "business_identity", None) != User.BusinessIdentity.TEACHER:
             raise serializers.ValidationError("Only TEACHER users can create or update personal subjects.")
 
         active_year = self._get_active_academic_year()
@@ -119,6 +127,10 @@ class AdminSubjectListSerializer(serializers.ModelSerializer):
             "subject_type",
             "technologies",
             "keywords",
+            "attachment_key",
+            "attachment_original_name",
+            "attachment_mime_type",
+            "attachment_size_bytes",
             "status",
             "proposed_by",
             "academic_year",
@@ -149,6 +161,10 @@ class PublicSubjectSerializer(serializers.ModelSerializer):
             "subject_type",
             "technologies",
             "keywords",
+            "attachment_key",
+            "attachment_original_name",
+            "attachment_mime_type",
+            "attachment_size_bytes",
             "proposed_by",
             "academic_year",
             "created_at",
