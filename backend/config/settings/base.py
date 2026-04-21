@@ -122,7 +122,7 @@ AUTHENTICATION_BACKENDS = [
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PERMISSION_CLASSES": [
-        "apps.accounts.permissions.IsAuthenticatedAndNotArchived",
+        "apps.accounts.permissions.IsAuthenticatedAndActiveAccount",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",

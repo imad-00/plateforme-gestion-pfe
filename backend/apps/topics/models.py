@@ -52,7 +52,6 @@ class Subject(models.Model):
         blank=True,
     )
 
-    is_archived = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -61,7 +60,6 @@ class Subject(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["status"], name="topics_subject_status_idx"),
-            models.Index(fields=["is_archived"], name="topics_subject_archived_idx"),
             models.Index(fields=["academic_year"], name="topics_subject_year_idx"),
             models.Index(fields=["proposed_by"], name="topics_subject_teacher_idx"),
         ]
@@ -71,10 +69,10 @@ class Subject(models.Model):
 
     @property
     def is_editable_by_teacher(self):
-        return not self.is_archived and self.status in {self.Status.DRAFT, self.Status.REJECTED}
+        return self.status in {self.Status.DRAFT, self.Status.REJECTED}
 
     def clean(self):
-        if self.academic_year_id and self.academic_year.is_archived:
+        if self.academic_year_id and self.academic_year.status == "ARCHIVED":
             raise ValidationError({"academic_year": "Subject cannot be linked to an archived academic year."})
 
         if self.proposed_by_id:
@@ -84,10 +82,8 @@ class Subject(models.Model):
             if not is_teacher_identity:
                 raise ValidationError({"proposed_by": "Only teacher users can propose subjects."})
 
-        if self.status == self.Status.ARCHIVED:
-            self.is_archived = True
-        elif self.is_archived and self.status != self.Status.ARCHIVED:
-            raise ValidationError({"status": "Archived subject must use ARCHIVED status."})
+        if self.status not in self.Status.values:
+            raise ValidationError({"status": "Invalid subject status."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

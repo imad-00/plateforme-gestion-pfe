@@ -4,15 +4,18 @@ from django.db.models import Q
 
 
 class AcademicYear(models.Model):
-    class AcademicYearStatus(models.TextChoices):
+    class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "Active"
         CLOSED = "CLOSED", "Closed"
         ARCHIVED = "ARCHIVED", "Archived"
 
     id = models.BigAutoField(primary_key=True)
     year = models.CharField(max_length=20, unique=True)
-    is_active = models.BooleanField(default=False)
-    is_archived = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.CLOSED,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -20,13 +23,12 @@ class AcademicYear(models.Model):
         db_table = "academics_academic_year"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["is_active"], name="academics_year_active_idx"),
-            models.Index(fields=["is_archived"], name="academics_year_archived_idx"),
+            models.Index(fields=["status"], name="academics_year_status_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["is_active"],
-                condition=Q(is_active=True),
+                fields=["status"],
+                condition=Q(status="ACTIVE"),
                 name="academics_single_active_year_constraint",
             )
         ]
@@ -34,21 +36,9 @@ class AcademicYear(models.Model):
     def __str__(self):
         return self.year
 
-    @property
-    def status(self):
-        """
-        Transitional enum-like view.
-        Source of truth remains DB flags until full status-field migration.
-        """
-        if self.is_archived:
-            return self.AcademicYearStatus.ARCHIVED
-        if self.is_active:
-            return self.AcademicYearStatus.ACTIVE
-        return self.AcademicYearStatus.CLOSED
-
     def clean(self):
-        if self.is_archived and self.is_active:
-            raise ValidationError({"is_active": "Archived academic year cannot be active."})
+        if self.status not in self.Status.values:
+            raise ValidationError({"status": "Invalid academic year status."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

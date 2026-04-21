@@ -2,6 +2,8 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.accounts.models import User
+
 
 @pytest.mark.django_db
 def test_login_with_matricule_valid(student_user):
@@ -52,7 +54,7 @@ def test_login_archived_user_refused(user_factory):
     archived_user = user_factory(
         matricule="ARCH001",
         email="archived@example.com",
-        is_archived=True,
+        account_status=User.AccountStatus.ARCHIVED,
     )
     client = APIClient()
 
@@ -71,7 +73,7 @@ def test_login_inactive_user_refused(user_factory):
     inactive_user = user_factory(
         matricule="INACT001",
         email="inactive@example.com",
-        is_active=False,
+        account_status=User.AccountStatus.SUSPENDED,
     )
     client = APIClient()
 
@@ -143,10 +145,10 @@ def test_me_archived_user_forbidden(user_factory):
     archived_user = user_factory(
         matricule="ARCH002",
         email="archived2@example.com",
-        is_archived=True,
+        account_status=User.AccountStatus.ARCHIVED,
     )
     access = str(RefreshToken.for_user(archived_user).access_token)
 
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
     response = client.get("/api/auth/me/")
-    assert response.status_code == 401
+    assert response.status_code == 403

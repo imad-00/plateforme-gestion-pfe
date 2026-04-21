@@ -88,7 +88,7 @@ class AdminUserArchiveView(APIView):
             )
 
         user.account_status = User.AccountStatus.ARCHIVED
-        user.save(update_fields=["account_status", "is_active", "is_archived", "updated_at"])
+        user.save(update_fields=["account_status", "updated_at"])
         return Response(AdminUserListSerializer(user).data, status=status.HTTP_200_OK)
 
 

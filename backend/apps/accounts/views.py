@@ -10,7 +10,7 @@ from apps.accounts.serializers import (
     RefreshTokenInputSerializer,
     UserSerializer,
 )
-from apps.accounts.permissions import IsAuthenticatedAndNotArchived
+from apps.accounts.permissions import IsAuthenticatedAndActiveAccount
 
 
 class LoginView(APIView):
@@ -35,7 +35,7 @@ class RefreshView(TokenRefreshView):
 
 
 class MeView(APIView):
-    permission_classes = [IsAuthenticatedAndNotArchived]
+    permission_classes = [IsAuthenticatedAndActiveAccount]
 
     @extend_schema(
         responses={200: UserSerializer},

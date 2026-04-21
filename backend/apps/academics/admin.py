@@ -8,12 +8,11 @@ class AcademicYearAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "year",
-        "is_active",
-        "is_archived",
+        "status",
         "created_at",
         "updated_at",
     )
-    list_filter = ("is_active", "is_archived")
+    list_filter = ("status",)
     search_fields = ("year",)
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")

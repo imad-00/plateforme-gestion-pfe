@@ -12,10 +12,9 @@ class SubjectAdmin(admin.ModelAdmin):
         "status",
         "proposed_by",
         "academic_year",
-        "is_archived",
         "created_at",
     )
-    list_filter = ("subject_type", "status", "is_archived", "academic_year")
+    list_filter = ("subject_type", "status", "academic_year")
     search_fields = ("title", "proposed_by__matricule", "proposed_by__email")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at", "submitted_at", "reviewed_at")

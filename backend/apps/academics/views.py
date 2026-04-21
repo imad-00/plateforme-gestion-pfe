@@ -18,7 +18,7 @@ class AdminAcademicYearListCreateView(APIView):
         include_archived = request.query_params.get("include_archived", "false").lower()
         queryset = AcademicYear.objects.all()
         if include_archived != "true":
-            queryset = queryset.filter(is_archived=False)
+            queryset = queryset.exclude(status=AcademicYear.Status.ARCHIVED)
         queryset = queryset.order_by("-created_at")
         paginator = DefaultPageNumberPagination()
         page = paginator.paginate_queryset(queryset, request)
@@ -45,7 +45,7 @@ class AdminAcademicYearDetailUpdateView(APIView):
     @extend_schema(tags=["Academic Years"], request=AcademicYearSerializer, responses=AcademicYearSerializer)
     def patch(self, request, pk):
         academic_year = get_object_or_404(AcademicYear, pk=pk)
-        if academic_year.is_archived:
+        if academic_year.status == AcademicYear.Status.ARCHIVED:
             return Response(
                 {"detail": "Archived academic year cannot be updated."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -62,8 +62,7 @@ class AdminAcademicYearArchiveView(APIView):
     @extend_schema(tags=["Academic Years"], responses={200: AcademicYearSerializer})
     def post(self, request, pk):
         academic_year = get_object_or_404(AcademicYear, pk=pk)
-        academic_year.is_archived = True
-        academic_year.is_active = False
-        academic_year.save(update_fields=["is_archived", "is_active", "updated_at"])
+        academic_year.status = AcademicYear.Status.ARCHIVED
+        academic_year.save(update_fields=["status", "updated_at"])
         serializer = AcademicYearSerializer(academic_year)
         return Response(serializer.data, status=status.HTTP_200_OK)

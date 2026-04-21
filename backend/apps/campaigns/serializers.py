@@ -38,7 +38,7 @@ class CampaignPhaseSerializer(serializers.ModelSerializer):
         start_at = attrs.get("start_at", instance.start_at if instance is not None else None)
         end_at = attrs.get("end_at", instance.end_at if instance is not None else None)
 
-        if academic_year is not None and academic_year.is_archived:
+        if academic_year is not None and academic_year.status == "ARCHIVED":
             raise serializers.ValidationError(
                 {"academic_year": "Cannot attach phase to archived academic year."}
             )

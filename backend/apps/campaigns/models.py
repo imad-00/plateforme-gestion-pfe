@@ -50,7 +50,7 @@ class CampaignPhase(models.Model):
         return f"{self.academic_year.year} - {self.phase_type}"
 
     def clean(self):
-        if self.academic_year.is_archived:
+        if self.academic_year.status == "ARCHIVED":
             raise ValidationError({"academic_year": "Cannot attach phase to archived academic year."})
 
         if self.end_at is not None and self.end_at < self.start_at:

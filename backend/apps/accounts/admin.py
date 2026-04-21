@@ -26,11 +26,9 @@ class UserAdmin(DjangoUserAdmin):
         "last_name",
         "business_identity",
         "account_status",
-        "is_staff",
-        "is_superuser",
         "created_at",
     )
-    list_filter = ("business_identity", "account_status", "is_staff", "is_superuser")
+    list_filter = ("business_identity", "account_status")
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
@@ -47,14 +45,9 @@ class UserAdmin(DjangoUserAdmin):
             },
         ),
         (
-            "Permissions",
+            "Groups & Permissions",
             {
                 "fields": (
-                    "is_active",
-                    "is_archived",
-                    "global_role",
-                    "is_staff",
-                    "is_superuser",
                     "groups",
                     "user_permissions",
                 )
@@ -77,8 +70,6 @@ class UserAdmin(DjangoUserAdmin):
                     "password2",
                     "business_identity",
                     "account_status",
-                    "is_staff",
-                    "is_superuser",
                 ),
             },
         ),

@@ -16,7 +16,7 @@ class SubjectTeacherSummarySerializer(serializers.ModelSerializer):
 class SubjectAcademicYearSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = AcademicYear
-        fields = ["id", "year", "is_active", "is_archived"]
+        fields = ["id", "year", "status"]
 
 
 class TeacherSubjectListSerializer(serializers.ModelSerializer):
@@ -41,7 +41,6 @@ class TeacherSubjectListSerializer(serializers.ModelSerializer):
             "submitted_at",
             "reviewed_at",
             "reviewed_by",
-            "is_archived",
             "created_at",
             "updated_at",
         ]
@@ -65,10 +64,10 @@ class TeacherSubjectWriteSerializer(serializers.ModelSerializer):
         extra_kwargs = {"academic_year": {"required": False}}
 
     def _get_active_academic_year(self):
-        return AcademicYear.objects.filter(is_active=True, is_archived=False).first()
+        return AcademicYear.objects.filter(status=AcademicYear.Status.ACTIVE).first()
 
     def validate_academic_year(self, value):
-        if value.is_archived or not value.is_active:
+        if value.status != AcademicYear.Status.ACTIVE:
             raise serializers.ValidationError("Subject must be linked to the active academic year.")
         return value
 
@@ -138,7 +137,6 @@ class AdminSubjectListSerializer(serializers.ModelSerializer):
             "submitted_at",
             "reviewed_at",
             "reviewed_by",
-            "is_archived",
             "created_at",
             "updated_at",
         ]
@@ -177,12 +175,12 @@ class SubjectWorkflowService:
 
     @staticmethod
     def _ensure_active_academic_year_subject(subject: Subject):
-        active_year = AcademicYear.objects.filter(is_active=True, is_archived=False).first()
+        active_year = AcademicYear.objects.filter(status=AcademicYear.Status.ACTIVE).first()
         if active_year is None:
             raise serializers.ValidationError(
                 {"academic_year": "No active academic year is configured."}
             )
-        if subject.academic_year_id != active_year.id or subject.academic_year.is_archived:
+        if subject.academic_year_id != active_year.id or subject.academic_year.status == AcademicYear.Status.ARCHIVED:
             raise serializers.ValidationError(
                 {"academic_year": "This subject is not in the current active academic year."}
             )
@@ -191,7 +189,7 @@ class SubjectWorkflowService:
     @transaction.atomic
     def submit(subject: Subject):
         SubjectWorkflowService._ensure_active_academic_year_subject(subject)
-        if subject.is_archived or subject.status != Subject.Status.DRAFT:
+        if subject.status != Subject.Status.DRAFT:
             raise serializers.ValidationError(
                 {"status": "Only DRAFT subject can be submitted."}
             )
@@ -217,7 +215,7 @@ class SubjectWorkflowService:
     @transaction.atomic
     def resubmit(subject: Subject):
         SubjectWorkflowService._ensure_active_academic_year_subject(subject)
-        if subject.is_archived or subject.status != Subject.Status.REJECTED:
+        if subject.status != Subject.Status.REJECTED:
             raise serializers.ValidationError(
                 {"status": "Only REJECTED subject can be resubmitted."}
             )
@@ -243,7 +241,7 @@ class SubjectWorkflowService:
     @transaction.atomic
     def approve(subject: Subject, reviewer: User):
         SubjectWorkflowService._ensure_active_academic_year_subject(subject)
-        if subject.status != Subject.Status.SUBMITTED or subject.is_archived:
+        if subject.status != Subject.Status.SUBMITTED:
             raise serializers.ValidationError({"status": "Only SUBMITTED subject can be approved."})
 
         if subject.proposed_by_id == reviewer.id:
@@ -270,7 +268,7 @@ class SubjectWorkflowService:
     @transaction.atomic
     def reject(subject: Subject, reviewer: User, reason: str):
         SubjectWorkflowService._ensure_active_academic_year_subject(subject)
-        if subject.status != Subject.Status.SUBMITTED or subject.is_archived:
+        if subject.status != Subject.Status.SUBMITTED:
             raise serializers.ValidationError({"status": "Only SUBMITTED subject can be rejected."})
 
         if subject.proposed_by_id == reviewer.id:
@@ -300,10 +298,9 @@ class SubjectWorkflowService:
     @staticmethod
     @transaction.atomic
     def archive(subject: Subject):
-        if subject.is_archived:
+        if subject.status == Subject.Status.ARCHIVED:
             return subject
 
-        subject.is_archived = True
         subject.status = Subject.Status.ARCHIVED
-        subject.save(update_fields=["is_archived", "status", "updated_at"])
+        subject.save(update_fields=["status", "updated_at"])
         return subject

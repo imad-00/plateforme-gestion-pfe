@@ -8,12 +8,6 @@ from apps.accounts.managers import UserManager
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    class GlobalRole(models.TextChoices):
-        STUDENT = "STUDENT", "Student"
-        TEACHER = "TEACHER", "Teacher"
-        ADMIN = "ADMIN", "Admin"
-        SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
-
     class BusinessIdentity(models.TextChoices):
         STUDENT = "STUDENT", "Student"
         TEACHER = "TEACHER", "Teacher"
@@ -30,13 +24,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    global_role = models.CharField(
-        max_length=20,
-        choices=GlobalRole.choices,
-        default=GlobalRole.STUDENT,
-    )
-    # Deprecated business field kept temporarily for backward compatibility.
-    # Access decisions now rely on business_identity + platform access grants.
     business_identity = models.CharField(
         max_length=30,
         choices=BusinessIdentity.choices,
@@ -47,8 +34,6 @@ class User(AbstractBaseUser, PermissionsMixin):
         choices=AccountStatus.choices,
         default=AccountStatus.ACTIVE,
     )
-    is_active = models.BooleanField(default=True)
-    is_archived = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -61,10 +46,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = "accounts_user"
         indexes = [
-            models.Index(fields=["global_role"], name="accounts_user_role_idx"),
             models.Index(fields=["business_identity"], name="accounts_user_identity_idx"),
             models.Index(fields=["account_status"], name="accounts_user_status_idx"),
-            models.Index(fields=["is_archived"], name="accounts_user_archived_idx"),
         ]
 
     def __str__(self):
@@ -79,18 +62,33 @@ class User(AbstractBaseUser, PermissionsMixin):
         """Source of truth for user accessibility."""
         return self.account_status == self.AccountStatus.ACTIVE
 
-    def save(self, *args, **kwargs):
-        # Keep legacy boolean flags coherent with the new enum status.
-        if self.account_status == self.AccountStatus.ACTIVE:
-            self.is_active = True
-            self.is_archived = False
-        elif self.account_status == self.AccountStatus.SUSPENDED:
-            self.is_active = False
-            self.is_archived = False
-        elif self.account_status == self.AccountStatus.ARCHIVED:
-            self.is_active = False
-            self.is_archived = True
-        return super().save(*args, **kwargs)
+    def refresh_platform_flags(self):
+        """
+        Keep Django technical flags aligned with platform grants.
+        These flags are framework-level only, not business authorization source.
+        """
+        if not self.pk:
+            return
+
+        if self.account_status != self.AccountStatus.ACTIVE:
+            target_is_staff = False
+            target_is_superuser = False
+        else:
+            active_levels = set(
+                self.platform_access_grants.filter(revoked_at__isnull=True).values_list(
+                    "access_level", flat=True
+                )
+            )
+            target_is_staff = bool(active_levels)
+            target_is_superuser = self.platform_access_grants.model.AccessLevel.SUPER_ADMIN in active_levels
+
+        if self.is_staff != target_is_staff or self.is_superuser != target_is_superuser:
+            User.objects.filter(pk=self.pk).update(
+                is_staff=target_is_staff,
+                is_superuser=target_is_superuser,
+            )
+            self.is_staff = target_is_staff
+            self.is_superuser = target_is_superuser
 
 
 class StudentProfile(models.Model):
@@ -236,7 +234,17 @@ class PlatformAccessGrant(models.Model):
 
         if self.revoked_at is not None and self.revoked_at < self.granted_at:
             raise ValidationError({"revoked_at": "revoked_at cannot be before granted_at."})
+        if self.revoked_at is None and self.user.account_status != User.AccountStatus.ACTIVE:
+            raise ValidationError({"user": "Only ACTIVE users can hold active platform access grants."})
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        return super().save(*args, **kwargs)
+        result = super().save(*args, **kwargs)
+        self.user.refresh_platform_flags()
+        return result
+
+    def delete(self, *args, **kwargs):
+        user = self.user
+        result = super().delete(*args, **kwargs)
+        user.refresh_platform_flags()
+        return result

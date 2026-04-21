@@ -13,7 +13,7 @@ class StudentProfileAdminSerializer(serializers.ModelSerializer):
     def validate_academic_year(self, value):
         if value is None:
             return value
-        if value.is_archived or not value.is_active:
+        if value.status != AcademicYear.Status.ACTIVE:
             raise serializers.ValidationError(
                 "Student profile must be linked to the active academic year."
             )
@@ -105,7 +105,7 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             )
 
     def _get_active_academic_year(self):
-        return AcademicYear.objects.filter(is_active=True, is_archived=False).first()
+        return AcademicYear.objects.filter(status=AcademicYear.Status.ACTIVE).first()
 
     def validate(self, attrs):
         identity = attrs.get(
@@ -145,9 +145,31 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"password": "Password is required."})
 
         attrs.setdefault("account_status", User.AccountStatus.ACTIVE)
+
+        target_status = attrs.get(
+            "account_status",
+            getattr(self.instance, "account_status", User.AccountStatus.ACTIVE),
+        )
+        if (
+            self.instance is not None
+            and target_status != User.AccountStatus.ACTIVE
+            and self.instance.platform_access_grants.filter(revoked_at__isnull=True).exists()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "account_status": (
+                        "Revoke active platform access grants before suspending or archiving this account."
+                    )
+                }
+            )
         return attrs
 
     def _sync_platform_flags(self, user):
+        if user.account_status != User.AccountStatus.ACTIVE:
+            user.is_staff = False
+            user.is_superuser = False
+            return
+
         active_levels = set(
             user.platform_access_grants.filter(revoked_at__isnull=True).values_list(
                 "access_level", flat=True
