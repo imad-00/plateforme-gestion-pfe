@@ -4,9 +4,10 @@ from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsAdminOrSuperAdmin
+from apps.accounts.permissions import IsAdminOrSuperAdmin, IsAuthenticatedAndActiveAccount
 from apps.campaigns.models import CampaignPhase
 from apps.campaigns.serializers import CampaignPhaseSerializer
+from apps.campaigns.services import CampaignPhaseService
 from config.pagination import DefaultPageNumberPagination
 
 
@@ -74,3 +75,11 @@ class AdminCampaignPhaseArchiveView(APIView):
         phase.is_archived = True
         phase.save(update_fields=["is_archived", "updated_at"])
         return Response(CampaignPhaseSerializer(phase).data, status=status.HTTP_200_OK)
+
+
+class CurrentCampaignView(APIView):
+    permission_classes = [IsAuthenticatedAndActiveAccount]
+
+    @extend_schema(tags=["Campaign"], responses=dict)
+    def get(self, request):
+        return Response(CampaignPhaseService.get_user_action_availability(request.user), status=status.HTTP_200_OK)

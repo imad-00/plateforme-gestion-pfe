@@ -5,19 +5,19 @@ from apps.academics.models import AcademicYear
 
 
 class AcademicYearSerializer(serializers.ModelSerializer):
-    """
-    Academic year governance policy:
-    - archived year cannot be active
-    - only one year can be active at a time
-    - activating one year archives/deactivates all others
-    """
+    # Read/write alias aligned with class diagram naming.
+    year_label = serializers.CharField(source="year", required=False)
 
     class Meta:
         model = AcademicYear
         fields = [
             "id",
             "year",
+            "year_label",
+            "start_date",
+            "end_date",
             "status",
+            "wishlist_size",
             "created_at",
             "updated_at",
         ]
@@ -29,6 +29,12 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         status = attrs.get("status", instance.status if instance is not None else AcademicYear.Status.CLOSED)
         if status not in AcademicYear.Status.values:
             raise serializers.ValidationError({"status": "Invalid academic year status."})
+        wishlist_size = attrs.get(
+            "wishlist_size",
+            getattr(instance, "wishlist_size", 5),
+        )
+        if wishlist_size < 1:
+            raise serializers.ValidationError({"wishlist_size": "Wishlist size must be at least 1."})
         return attrs
 
     def _archive_other_years(self, *, exclude_pk=None):

@@ -10,6 +10,8 @@ from apps.accounts.permissions import (
     IsTeacherOrAbove,
 )
 from apps.academics.models import AcademicYear
+from apps.assignments.services import WishListService
+from apps.teams.services import TeamService
 from apps.topics.models import Subject
 from apps.topics.serializers import (
     AdminSubjectListSerializer,
@@ -181,11 +183,12 @@ class PublicSubjectListView(APIView):
         queryset = Subject.objects.none()
 
         if active_year is not None:
-            queryset = Subject.objects.filter(
-                status=Subject.Status.APPROVED,
-                academic_year=active_year,
-                academic_year__status=AcademicYear.Status.ACTIVE,
-            ).select_related("proposed_by", "academic_year")
+            team = TeamService.get_active_student_team(request.user)
+            if team is not None:
+                WishListService.ensure_catalog_open_for_team(team)
+                queryset = WishListService.get_available_subjects_for_team(team)
+            else:
+                queryset = WishListService.get_available_subjects_for_user_without_team()
 
         paginator = DefaultPageNumberPagination()
         page = paginator.paginate_queryset(queryset.order_by("-created_at"), request)
@@ -202,11 +205,11 @@ class PublicSubjectDetailView(APIView):
         if active_year is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        subject = get_object_or_404(
-            Subject.objects.select_related("proposed_by", "academic_year"),
-            pk=pk,
-            status=Subject.Status.APPROVED,
-            academic_year=active_year,
-            academic_year__status=AcademicYear.Status.ACTIVE,
-        )
+        team = TeamService.get_active_student_team(request.user)
+        if team is not None:
+            WishListService.ensure_catalog_open_for_team(team)
+            queryset = WishListService.get_available_subjects_for_team(team)
+        else:
+            queryset = WishListService.get_available_subjects_for_user_without_team()
+        subject = get_object_or_404(queryset, pk=pk)
         return Response(PublicSubjectSerializer(subject).data)

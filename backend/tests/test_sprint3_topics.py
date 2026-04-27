@@ -4,6 +4,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.academics.models import AcademicYear
+from apps.campaigns.models import CampaignPhase
 from apps.topics.models import Subject
 
 
@@ -15,8 +16,10 @@ def auth_client(user):
 
 
 @pytest.fixture
-def active_year(db):
-    return AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
+def active_year(db, open_campaign_phase):
+    year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
+    open_campaign_phase(year, CampaignPhase.PhaseType.SUBJECT_MANAGEMENT)
+    return year
 
 
 @pytest.mark.django_db

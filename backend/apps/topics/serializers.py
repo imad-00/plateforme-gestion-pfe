@@ -1,9 +1,12 @@
 from django.db import transaction
 from django.utils import timezone
+from uuid import uuid4
 from rest_framework import serializers
 
 from apps.accounts.models import User
 from apps.academics.models import AcademicYear
+from apps.campaigns.models import CampaignPhase
+from apps.campaigns.services import CampaignPhaseService
 from apps.topics.models import Subject
 
 
@@ -21,16 +24,20 @@ class SubjectAcademicYearSummarySerializer(serializers.ModelSerializer):
 
 class TeacherSubjectListSerializer(serializers.ModelSerializer):
     academic_year = SubjectAcademicYearSummarySerializer(read_only=True)
+    attachment_key = serializers.CharField(source="attachment_url", read_only=True)
+    attachment_original_name = serializers.SerializerMethodField()
+    attachment_mime_type = serializers.SerializerMethodField()
+    attachment_size_bytes = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
         fields = [
             "id",
+            "subject_code",
             "title",
             "description",
             "subject_type",
-            "technologies",
-            "keywords",
+            "attachment_url",
             "attachment_key",
             "attachment_original_name",
             "attachment_mime_type",
@@ -41,20 +48,36 @@ class TeacherSubjectListSerializer(serializers.ModelSerializer):
             "submitted_at",
             "reviewed_at",
             "reviewed_by",
+            "assigned_at",
+            "assigned_to_team",
             "created_at",
             "updated_at",
         ]
 
+    def get_attachment_original_name(self, obj):
+        return (obj.attachment_metadata or {}).get("original_name", "")
+
+    def get_attachment_mime_type(self, obj):
+        return (obj.attachment_metadata or {}).get("mime_type", "")
+
+    def get_attachment_size_bytes(self, obj):
+        return (obj.attachment_metadata or {}).get("size_bytes")
+
 
 class TeacherSubjectWriteSerializer(serializers.ModelSerializer):
+    attachment_key = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    attachment_original_name = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    attachment_mime_type = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    attachment_size_bytes = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+
     class Meta:
         model = Subject
         fields = [
+            "subject_code",
             "title",
             "description",
             "subject_type",
-            "technologies",
-            "keywords",
+            "attachment_url",
             "attachment_key",
             "attachment_original_name",
             "attachment_mime_type",
@@ -81,6 +104,7 @@ class TeacherSubjectWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"academic_year": "No active academic year is configured."}
             )
+        CampaignPhaseService.require_open(active_year, CampaignPhase.PhaseType.SUBJECT_MANAGEMENT)
 
         instance = getattr(self, "instance", None)
         if instance is not None and not instance.is_editable_by_teacher:
@@ -98,12 +122,26 @@ class TeacherSubjectWriteSerializer(serializers.ModelSerializer):
                 {"academic_year": "Only the current active academic year can be used."}
             )
 
+        if attrs.get("attachment_key") and not attrs.get("attachment_url"):
+            attrs["attachment_url"] = attrs["attachment_key"]
+        attrs["attachment_metadata"] = {
+            "original_name": attrs.get("attachment_original_name", ""),
+            "mime_type": attrs.get("attachment_mime_type", ""),
+            "size_bytes": attrs.get("attachment_size_bytes"),
+        }
+        attrs.pop("attachment_key", None)
+        attrs.pop("attachment_original_name", None)
+        attrs.pop("attachment_mime_type", None)
+        attrs.pop("attachment_size_bytes", None)
+
         attrs["academic_year"] = active_year
 
         return attrs
 
     def create(self, validated_data):
         user = self.context["request"].user
+        if not validated_data.get("subject_code"):
+            validated_data["subject_code"] = f"SUB-{uuid4().hex[:10].upper()}"
         return Subject.objects.create(
             proposed_by=user,
             status=Subject.Status.DRAFT,
@@ -116,16 +154,20 @@ class AdminSubjectListSerializer(serializers.ModelSerializer):
     proposed_by = SubjectTeacherSummarySerializer(read_only=True)
     reviewed_by = SubjectTeacherSummarySerializer(read_only=True)
     academic_year = SubjectAcademicYearSummarySerializer(read_only=True)
+    attachment_key = serializers.CharField(source="attachment_url", read_only=True)
+    attachment_original_name = serializers.SerializerMethodField()
+    attachment_mime_type = serializers.SerializerMethodField()
+    attachment_size_bytes = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
         fields = [
             "id",
+            "subject_code",
             "title",
             "description",
             "subject_type",
-            "technologies",
-            "keywords",
+            "attachment_url",
             "attachment_key",
             "attachment_original_name",
             "attachment_mime_type",
@@ -137,9 +179,20 @@ class AdminSubjectListSerializer(serializers.ModelSerializer):
             "submitted_at",
             "reviewed_at",
             "reviewed_by",
+            "assigned_at",
+            "assigned_to_team",
             "created_at",
             "updated_at",
         ]
+
+    def get_attachment_original_name(self, obj):
+        return (obj.attachment_metadata or {}).get("original_name", "")
+
+    def get_attachment_mime_type(self, obj):
+        return (obj.attachment_metadata or {}).get("mime_type", "")
+
+    def get_attachment_size_bytes(self, obj):
+        return (obj.attachment_metadata or {}).get("size_bytes")
 
 
 class RejectSubjectSerializer(serializers.Serializer):
@@ -149,20 +202,18 @@ class RejectSubjectSerializer(serializers.Serializer):
 class PublicSubjectSerializer(serializers.ModelSerializer):
     proposed_by = SubjectTeacherSummarySerializer(read_only=True)
     academic_year = SubjectAcademicYearSummarySerializer(read_only=True)
+    attachment_key = serializers.CharField(source="attachment_url", read_only=True)
 
     class Meta:
         model = Subject
         fields = [
             "id",
+            "subject_code",
             "title",
             "description",
             "subject_type",
-            "technologies",
-            "keywords",
+            "attachment_url",
             "attachment_key",
-            "attachment_original_name",
-            "attachment_mime_type",
-            "attachment_size_bytes",
             "proposed_by",
             "academic_year",
             "created_at",
@@ -184,6 +235,7 @@ class SubjectWorkflowService:
             raise serializers.ValidationError(
                 {"academic_year": "This subject is not in the current active academic year."}
             )
+        CampaignPhaseService.require_open(subject.academic_year, CampaignPhase.PhaseType.SUBJECT_MANAGEMENT)
 
     @staticmethod
     @transaction.atomic

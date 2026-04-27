@@ -18,15 +18,12 @@ class Subject(models.Model):
         ARCHIVED = "ARCHIVED", "Archived"
 
     id = models.BigAutoField(primary_key=True)
+    subject_code = models.CharField(max_length=32, unique=True, null=True, blank=True)
     title = models.CharField(max_length=255)
     description = models.TextField()
     subject_type = models.CharField(max_length=32, choices=SubjectType.choices)
-    technologies = models.TextField(blank=True)
-    keywords = models.CharField(max_length=500, blank=True)
-    attachment_key = models.CharField(max_length=255, blank=True)
-    attachment_original_name = models.CharField(max_length=255, blank=True)
-    attachment_mime_type = models.CharField(max_length=100, blank=True)
-    attachment_size_bytes = models.PositiveBigIntegerField(null=True, blank=True)
+    attachment_url = models.CharField(max_length=500, blank=True)
+    attachment_metadata = models.JSONField(default=dict, blank=True)
 
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
 
@@ -44,10 +41,18 @@ class Subject(models.Model):
     rejection_reason = models.TextField(blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
+    assigned_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="reviewed_subjects",
+        null=True,
+        blank=True,
+    )
+    assigned_to_team = models.OneToOneField(
+        "teams.Team",
+        on_delete=models.SET_NULL,
+        related_name="selected_subject",
         null=True,
         blank=True,
     )
@@ -59,6 +64,7 @@ class Subject(models.Model):
         db_table = "topics_subject"
         ordering = ["-created_at"]
         indexes = [
+            models.Index(fields=["subject_code"], name="topics_subject_code_idx"),
             models.Index(fields=["status"], name="topics_subject_status_idx"),
             models.Index(fields=["academic_year"], name="topics_subject_year_idx"),
             models.Index(fields=["proposed_by"], name="topics_subject_teacher_idx"),
@@ -84,6 +90,8 @@ class Subject(models.Model):
 
         if self.status not in self.Status.values:
             raise ValidationError({"status": "Invalid subject status."})
+        if self.assigned_to_team_id and self.status != self.Status.ASSIGNED:
+            raise ValidationError({"status": "Subject with assigned team must be in ASSIGNED status."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

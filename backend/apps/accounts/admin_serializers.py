@@ -10,6 +10,15 @@ User = get_user_model()
 
 
 class StudentProfileAdminSerializer(serializers.ModelSerializer):
+    moyenne_generale = serializers.DecimalField(
+        source="annual_average",
+        max_digits=5,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+    )
+    specialite = serializers.CharField(source="speciality", required=False, allow_blank=True, allow_null=True)
+
     def validate_academic_year(self, value):
         if value is None:
             return value
@@ -21,13 +30,23 @@ class StudentProfileAdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentProfile
-        fields = ["academic_year", "moyenne_generale", "specialite"]
+        fields = [
+            "academic_year",
+            "annual_average",
+            "moyenne_generale",
+            "speciality",
+            "specialite",
+            "cv_file_url",
+            "skills_summary",
+        ]
 
 
 class TeacherProfileAdminSerializer(serializers.ModelSerializer):
+    departement = serializers.CharField(source="department", required=False, allow_null=True, allow_blank=True)
+
     class Meta:
         model = TeacherProfile
-        fields = ["grade", "departement"]
+        fields = ["grade", "department", "departement"]
 
 
 class AdminUserListSerializer(serializers.ModelSerializer):
@@ -229,6 +248,9 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
                 )
             effective_student_data["academic_year"] = active_year
             StudentProfile.objects.update_or_create(user=user, defaults=effective_student_data)
+            from apps.teams.services import TeamService
+
+            TeamService.create_solo_team_for_student(user, academic_year=active_year)
             TeacherProfile.objects.filter(user=user).delete()
             return
 

@@ -4,6 +4,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from apps.accounts.models import (
     AdministrativeStaffProfile,
     ExternalSupervisorProfile,
+    PasswordResetOTP,
     PlatformAccessGrant,
     StudentProfile,
     TeacherProfile,
@@ -84,17 +85,17 @@ class StudentProfileAdmin(admin.ModelAdmin):
         "id",
         "user",
         "academic_year",
-        "specialite",
-        "moyenne_generale",
+        "speciality",
+        "annual_average",
         "created_at",
     )
-    list_filter = ("academic_year", "specialite")
+    list_filter = ("academic_year", "speciality")
     search_fields = (
         "user__matricule",
         "user__email",
         "user__first_name",
         "user__last_name",
-        "specialite",
+        "speciality",
     )
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
@@ -102,15 +103,15 @@ class StudentProfileAdmin(admin.ModelAdmin):
 
 @admin.register(TeacherProfile)
 class TeacherProfileAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "grade", "departement", "created_at")
-    list_filter = ("grade", "departement")
+    list_display = ("id", "user", "grade", "department", "created_at")
+    list_filter = ("grade", "department")
     search_fields = (
         "user__matricule",
         "user__email",
         "user__first_name",
         "user__last_name",
         "grade",
-        "departement",
+        "department",
     )
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
@@ -127,9 +128,9 @@ class AdministrativeStaffProfileAdmin(admin.ModelAdmin):
 
 @admin.register(ExternalSupervisorProfile)
 class ExternalSupervisorProfileAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "organization", "job_title", "created_at")
-    list_filter = ("organization", "job_title")
-    search_fields = ("user__matricule", "user__email", "organization", "job_title")
+    list_display = ("id", "user", "organization", "job_title", "expertise_area", "created_at")
+    list_filter = ("organization", "job_title", "expertise_area")
+    search_fields = ("user__matricule", "user__email", "organization", "job_title", "expertise_area")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
 
@@ -148,3 +149,24 @@ class PlatformAccessGrantAdmin(admin.ModelAdmin):
     search_fields = ("user__matricule", "user__email", "granted_by__matricule")
     ordering = ("-granted_at",)
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(PasswordResetOTP)
+class PasswordResetOTPAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "expires_at",
+        "verified_at",
+        "consumed_at",
+        "created_at",
+    )
+    list_filter = ("verified_at", "consumed_at")
+    search_fields = ("user__matricule", "user__email", "verification_token")
+    ordering = ("-created_at",)
+    readonly_fields = (
+        "otp_code_hash",
+        "verification_token",
+        "created_at",
+        "updated_at",
+    )

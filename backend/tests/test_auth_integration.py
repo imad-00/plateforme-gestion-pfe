@@ -2,7 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import User
+from apps.accounts.models import PasswordResetOTP, User
 
 
 @pytest.mark.django_db
@@ -151,4 +151,146 @@ def test_me_archived_user_forbidden(user_factory):
 
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
     response = client.get("/api/auth/me/")
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_change_password_in_session(student_user):
+    client = APIClient()
+    login_response = client.post(
+        "/api/auth/login/",
+        {"identifier": student_user.email, "password": "Testpass123!"},
+        format="json",
+    )
+    access = login_response.json()["access"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+
+    response = client.post(
+        "/api/auth/change-password/",
+        {
+            "old_password": "Testpass123!",
+            "new_password": "NewStrongPass123!",
+            "confirm_password": "NewStrongPass123!",
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+
+    relogin = client.post(
+        "/api/auth/login/",
+        {"identifier": student_user.email, "password": "NewStrongPass123!"},
+        format="json",
+    )
+    assert relogin.status_code == 200
+
+
+@pytest.mark.django_db
+def test_password_reset_flow_with_otp(student_user):
+    client = APIClient()
+
+    request_otp = client.post(
+        "/api/auth/password-reset/request-otp/",
+        {"identifier": student_user.email},
+        format="json",
+    )
+    assert request_otp.status_code == 200
+
+    otp_record = PasswordResetOTP.objects.filter(user=student_user).order_by("-created_at").first()
+    assert otp_record is not None
+    otp_record.set_otp("123456")
+    otp_record.save(update_fields=["otp_code_hash", "updated_at"])
+
+    verify = client.post(
+        "/api/auth/password-reset/verify-otp/",
+        {"identifier": student_user.email, "otp": "123456"},
+        format="json",
+    )
+    assert verify.status_code == 200
+    verification_token = verify.json()["verification_token"]
+
+    confirm = client.post(
+        "/api/auth/password-reset/confirm/",
+        {
+            "identifier": student_user.email,
+            "verification_token": verification_token,
+            "new_password": "ResetPass123!",
+            "confirm_password": "ResetPass123!",
+        },
+        format="json",
+    )
+    assert confirm.status_code == 200
+
+    relogin = client.post(
+        "/api/auth/login/",
+        {"identifier": student_user.email, "password": "ResetPass123!"},
+        format="json",
+    )
+    assert relogin.status_code == 200
+
+
+@pytest.mark.django_db
+def test_logout_blacklists_refresh_token(student_user):
+    client = APIClient()
+    login_response = client.post(
+        "/api/auth/login/",
+        {"identifier": student_user.email, "password": "Testpass123!"},
+        format="json",
+    )
+    access = login_response.json()["access"]
+    refresh = login_response.json()["refresh"]
+
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+    logout_response = client.post(
+        "/api/auth/logout/",
+        {"refresh": refresh},
+        format="json",
+    )
+    assert logout_response.status_code == 200
+
+    refresh_response = client.post(
+        "/api/auth/refresh/",
+        {"refresh": refresh},
+        format="json",
+    )
+    assert refresh_response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_identity_availability_for_admin(admin_user, student_user):
+    client = APIClient()
+    login_response = client.post(
+        "/api/auth/login/",
+        {"identifier": admin_user.email, "password": "Testpass123!"},
+        format="json",
+    )
+    access = login_response.json()["access"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+
+    response = client.post(
+        "/api/auth/identity-availability/",
+        {"email": student_user.email, "matricule": "NEW-MAT-001"},
+        format="json",
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["email"]["available"] is False
+    assert payload["matricule"]["available"] is True
+
+
+@pytest.mark.django_db
+def test_identity_availability_forbidden_for_student(student_user):
+    client = APIClient()
+    login_response = client.post(
+        "/api/auth/login/",
+        {"identifier": student_user.email, "password": "Testpass123!"},
+        format="json",
+    )
+    access = login_response.json()["access"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+
+    response = client.post(
+        "/api/auth/identity-availability/",
+        {"email": "new@example.com"},
+        format="json",
+    )
     assert response.status_code == 403

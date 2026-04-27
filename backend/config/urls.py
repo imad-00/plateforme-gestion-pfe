@@ -12,8 +12,13 @@ urlpatterns = [
     path("api/admin/", include("apps.campaigns.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("api/admin/", include("apps.topics.admin_urls")),
+    path("api/admin/", include("apps.teams.admin_urls")),
+    path("api/admin/", include("apps.assignments.admin_urls")),
     path("api/super-admin/", include("apps.accounts.super_admin_urls")),
     path("api/teacher/", include("apps.topics.teacher_urls")),
+    path("api/", include("apps.campaigns.public_urls")),
+    path("api/", include("apps.teams.urls")),
+    path("api/", include("apps.assignments.urls")),
     path("api/", include("apps.topics.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="api-schema"),
     path(

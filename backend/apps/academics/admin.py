@@ -7,12 +7,14 @@ from apps.academics.models import AcademicYear
 class AcademicYearAdmin(admin.ModelAdmin):
     list_display = (
         "id",
-        "year",
+        "year_label",
+        "start_date",
+        "end_date",
         "status",
         "created_at",
         "updated_at",
     )
     list_filter = ("status",)
-    search_fields = ("year",)
+    search_fields = ("year_label",)
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")

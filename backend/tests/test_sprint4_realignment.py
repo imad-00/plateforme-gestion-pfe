@@ -94,7 +94,7 @@ def test_admin_can_create_campaign_phase(admin_user):
         "/api/admin/campaign-phases/",
         {
             "academic_year": year.id,
-            "phase_type": "ACCOUNT_SETUP",
+            "phase_type": "CAMPAIGN_SETUP",
             "start_at": start.isoformat(),
             "end_at": end.isoformat(),
             "display_order": 1,
@@ -103,7 +103,7 @@ def test_admin_can_create_campaign_phase(admin_user):
     )
 
     assert response.status_code == 201
-    assert response.json()["phase_type"] == "ACCOUNT_SETUP"
+    assert response.json()["phase_type"] == "CAMPAIGN_SETUP"
 
 
 @pytest.mark.django_db
@@ -118,7 +118,7 @@ def test_campaign_phase_invalid_date_range_rejected(admin_user):
         "/api/admin/campaign-phases/",
         {
             "academic_year": year.id,
-            "phase_type": "ACCOUNT_SETUP",
+            "phase_type": "CAMPAIGN_SETUP",
             "start_at": start.isoformat(),
             "end_at": end.isoformat(),
             "display_order": 1,
@@ -141,7 +141,7 @@ def test_campaign_phase_cannot_use_archived_academic_year(admin_user):
         "/api/admin/campaign-phases/",
         {
             "academic_year": year.id,
-            "phase_type": "ACCOUNT_SETUP",
+            "phase_type": "CAMPAIGN_SETUP",
             "start_at": start.isoformat(),
             "display_order": 1,
         },
@@ -157,14 +157,14 @@ def test_campaign_phase_list_excludes_archived_by_default(admin_user):
     year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
     active_phase = CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.ACCOUNT_SETUP,
+        phase_type=CampaignPhase.PhaseType.CAMPAIGN_SETUP,
         start_at=timezone.now(),
         display_order=1,
         is_archived=False,
     )
     CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.SUBJECT_SUBMISSION_AND_REVIEW,
+        phase_type=CampaignPhase.PhaseType.SUBJECT_MANAGEMENT,
         start_at=timezone.now(),
         display_order=2,
         is_archived=True,
@@ -184,14 +184,14 @@ def test_campaign_phase_list_include_archived(admin_user):
     year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
     CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.ACCOUNT_SETUP,
+        phase_type=CampaignPhase.PhaseType.CAMPAIGN_SETUP,
         start_at=timezone.now(),
         display_order=1,
         is_archived=False,
     )
     archived_phase = CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.SUBJECT_SUBMISSION_AND_REVIEW,
+        phase_type=CampaignPhase.PhaseType.SUBJECT_MANAGEMENT,
         start_at=timezone.now(),
         display_order=2,
         is_archived=True,
@@ -303,8 +303,9 @@ def test_revoked_grant_disables_admin_access(super_admin_user, user_factory):
 
 
 @pytest.mark.django_db
-def test_subject_attachment_fields_are_persisted_on_teacher_create(teacher_user):
-    AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
+def test_subject_attachment_fields_are_persisted_on_teacher_create(teacher_user, open_campaign_phase):
+    year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
+    open_campaign_phase(year, CampaignPhase.PhaseType.SUBJECT_MANAGEMENT)
     client = auth_client(teacher_user)
 
     response = client.post(
@@ -355,7 +356,7 @@ def test_campaign_phase_unique_phase_type_per_year(admin_user):
     year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
     CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.ACCOUNT_SETUP,
+        phase_type=CampaignPhase.PhaseType.CAMPAIGN_SETUP,
         start_at=timezone.now(),
         display_order=1,
     )
@@ -365,7 +366,7 @@ def test_campaign_phase_unique_phase_type_per_year(admin_user):
         "/api/admin/campaign-phases/",
         {
             "academic_year": year.id,
-            "phase_type": CampaignPhase.PhaseType.ACCOUNT_SETUP,
+            "phase_type": CampaignPhase.PhaseType.CAMPAIGN_SETUP,
             "start_at": timezone.now().isoformat(),
             "display_order": 2,
         },
@@ -381,7 +382,7 @@ def test_campaign_phase_unique_display_order_per_year(admin_user):
     year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
     CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.ACCOUNT_SETUP,
+        phase_type=CampaignPhase.PhaseType.CAMPAIGN_SETUP,
         start_at=timezone.now(),
         display_order=1,
     )
@@ -391,7 +392,7 @@ def test_campaign_phase_unique_display_order_per_year(admin_user):
         "/api/admin/campaign-phases/",
         {
             "academic_year": year.id,
-            "phase_type": CampaignPhase.PhaseType.SUBJECT_SUBMISSION_AND_REVIEW,
+            "phase_type": CampaignPhase.PhaseType.SUBJECT_MANAGEMENT,
             "start_at": timezone.now().isoformat(),
             "display_order": 1,
         },
@@ -407,7 +408,7 @@ def test_campaign_phase_archive_endpoint_sets_logical_archive(admin_user):
     year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
     phase = CampaignPhase.objects.create(
         academic_year=year,
-        phase_type=CampaignPhase.PhaseType.ACCOUNT_SETUP,
+        phase_type=CampaignPhase.PhaseType.CAMPAIGN_SETUP,
         start_at=timezone.now(),
         display_order=1,
     )

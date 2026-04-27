@@ -1,4 +1,6 @@
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 from django.db.models import Q
@@ -104,13 +106,16 @@ class StudentProfile(models.Model):
         null=True,
         blank=True,
     )
-    moyenne_generale = models.DecimalField(
-        max_digits=4,
+    annual_average = models.DecimalField(
+        max_digits=5,
         decimal_places=2,
         null=True,
         blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(20)],
     )
-    specialite = models.CharField(max_length=255, null=True, blank=True)
+    speciality = models.CharField(max_length=255, null=True, blank=True)
+    cv_file_url = models.CharField(max_length=500, blank=True)
+    skills_summary = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -121,6 +126,23 @@ class StudentProfile(models.Model):
         year_label = self.academic_year.year if self.academic_year else "No Academic Year"
         return f"{self.user.matricule} - {year_label}"
 
+    # Backward compatibility aliases; source fields now follow class diagram naming.
+    @property
+    def moyenne_generale(self):
+        return self.annual_average
+
+    @moyenne_generale.setter
+    def moyenne_generale(self, value):
+        self.annual_average = value
+
+    @property
+    def specialite(self):
+        return self.speciality
+
+    @specialite.setter
+    def specialite(self, value):
+        self.speciality = value
+
 
 class TeacherProfile(models.Model):
     user = models.OneToOneField(
@@ -129,7 +151,7 @@ class TeacherProfile(models.Model):
         related_name="teacher_profile",
     )
     grade = models.CharField(max_length=255, null=True, blank=True)
-    departement = models.CharField(max_length=255, null=True, blank=True)
+    department = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -138,6 +160,14 @@ class TeacherProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.matricule} - {self.grade or 'No Grade'}"
+
+    @property
+    def departement(self):
+        return self.department
+
+    @departement.setter
+    def departement(self, value):
+        self.department = value
 
 
 class AdministrativeStaffProfile(models.Model):
@@ -166,6 +196,7 @@ class ExternalSupervisorProfile(models.Model):
     )
     organization = models.CharField(max_length=255, null=True, blank=True)
     job_title = models.CharField(max_length=255, null=True, blank=True)
+    expertise_area = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -248,3 +279,54 @@ class PlatformAccessGrant(models.Model):
         result = super().delete(*args, **kwargs)
         user.refresh_platform_flags()
         return result
+
+
+class PasswordResetOTP(models.Model):
+    """
+    One-time password flow storage for password reset.
+    OTP code is hashed, never stored in plaintext.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="password_reset_otps",
+    )
+    otp_code_hash = models.CharField(max_length=128)
+    verification_token = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "accounts_password_reset_otp"
+        indexes = [
+            models.Index(fields=["user"], name="acc_pwd_reset_user_idx"),
+            models.Index(fields=["expires_at"], name="acc_pwd_reset_exp_idx"),
+            models.Index(fields=["consumed_at"], name="acc_pwd_reset_used_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.matricule} password-reset OTP @ {self.created_at.isoformat()}"
+
+    @property
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+
+    @property
+    def is_consumed(self):
+        return self.consumed_at is not None
+
+    def set_otp(self, raw_otp: str):
+        self.otp_code_hash = make_password(raw_otp)
+
+    def check_otp(self, raw_otp: str) -> bool:
+        return check_password(raw_otp, self.otp_code_hash)

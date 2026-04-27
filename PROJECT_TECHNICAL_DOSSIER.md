@@ -1,7 +1,7 @@
 # PFE Management Platform Backend
 ## Technical Dossier - Post Convergence Architecture
 
-Version date: 2026-04-20
+Version date: 2026-04-26
 
 ---
 
@@ -25,6 +25,10 @@ Authoritative architectural axes are now:
    - `User.account_status`
    - `AcademicYear.status`
    - `Subject.status`
+   - `Team.status`
+   - `TeamParticipant.status`
+   - `WishList.status`
+   - `Appeal.status`
 
 ---
 
@@ -82,12 +86,14 @@ Rules:
 ### `AcademicYear`
 - `year`
 - `status` (`ACTIVE`, `CLOSED`, `ARCHIVED`)
+- `wishlist_size` (default `5`)
 - timestamps
 
 Rules:
 - one `ACTIVE` academic year at a time (DB constraint)
 - activating a year archives all others (service/serializer logic)
 - archived year cannot be edited through normal update endpoint
+- wishlist length is configured per academic year and must be at least 1
 
 ## 3.3 Campaigns
 
@@ -123,6 +129,136 @@ Rules:
 - subject linked to non-archived academic year
 - workflow transitions validated explicitly
 - `ARCHIVED` is represented by status only
+
+## 3.5 Teams
+
+### `Team`
+Campaign team aggregate:
+- `team_code`
+- `academic_year`
+- `name`
+- `status` (`FORMING`, `LOCKED`, `VALIDATED`, `DISSOLVED`, `ARCHIVED`)
+- `selection_round` (`FIRST`, `SECOND`)
+- `annual_average`
+- `created_at`, `updated_at`, `dissolved_at`
+
+Rules:
+- a team belongs to one academic year
+- teams are not deleted for business workflows
+- student-managed composition is allowed only while `FORMING`
+- `LOCKED` and `VALIDATED` teams require admin intervention for composition changes
+
+### `TeamParticipant`
+Contextual participation in a team:
+- `user`
+- `team`
+- `role` (`LEADER`, `MEMBER`, `SUPERVISOR`)
+- `status` (`PENDING`, `ACTIVE`, `ENDED`, `REJECTED`)
+- `joined_at`, `ended_at`, timestamps
+
+Rules:
+- one active leader per team
+- student membership uses `LEADER` / `MEMBER`
+- supervisors use `SUPERVISOR`
+- supervisors do not count toward student team size
+- duplicate active/pending participations are blocked where relevant
+
+### Sprint 5 services
+Business behavior is centralized in:
+- `TeamService`
+- `InvitationService`
+- `ParticipationService`
+
+These services handle:
+- solo team creation
+- invitations
+- invitation accept/reject
+- leave team
+- member removal
+- leadership transfer
+- team locking
+- admin supervisor management
+- future subject-owner supervisor helper
+
+## 3.6 Wishes, Appeals, and Assignment
+
+Sprint 6 adds the subject choice and assignment workflow without adding assignment run/result tables. Assignment results are stored directly on `Team` and `Subject`.
+
+### `WishList`
+Team wishlist for a selection round:
+- `wishlist_id`
+- `team`
+- `academic_year`
+- `selection_round` (`FIRST`, `SECOND`)
+- `status` (`DRAFT`, `SUBMITTED`, `LOCKED`, `ARCHIVED`)
+- `submitted_by`
+- `submitted_at`
+- timestamps
+
+Rules:
+- one wishlist per team per selection round
+- wishlist size is not stored on the wishlist
+- required size comes from `AcademicYear.wishlist_size`
+- submitted wishlists are historical records, not deleted
+
+### `WishItem`
+Ranked subject choice:
+- `wishitem_id`
+- `wishlist`
+- `subject`
+- `rank`
+
+Rules:
+- one subject appears only once per wishlist
+- one rank appears only once per wishlist
+- service validation enforces continuous ranks from `1..N`
+
+### `Appeal`
+Team appeal after first-round assignment:
+- `appeal_id`
+- `team`
+- `reason`
+- `status` (`PENDING`, `ACCEPTED`, `REJECTED`)
+- `submitted_by`
+- `reviewed_by`
+- `submitted_at`, `resolved_at`
+- `admin_comment`
+- timestamps
+
+Rules:
+- one appeal per team
+- only the active leader can submit an appeal
+- appeal is allowed only after a first-round assignment
+- accepting an appeal releases the previous subject, sets the team back to `LOCKED`, and moves the team to `SECOND` round
+- rejecting an appeal keeps the assignment unchanged
+
+### Sprint 6 services
+Business behavior is centralized in:
+- `WishListService`
+- `AssignmentService`
+- `AppealService`
+
+Assignment modes:
+- `MERIT_AVERAGE`
+- `RANDOM`
+- `MANUAL`
+
+Assignment result transitions:
+- `Team.status: LOCKED -> VALIDATED`
+- `Subject.status: APPROVED -> ASSIGNED`
+- `Subject.assigned_to_team` stores the selected team
+- subject owner is added as contextual `SUPERVISOR` through the Sprint 5 helper
+
+Team average rule:
+- computed from active student participants only
+- uses `StudentProfile.annual_average`
+- missing averages are skipped
+- if all active students are missing averages, `Team.annual_average = null` and the team is skipped in merit assignment
+
+Subject compatibility rule:
+- team size `<= 2`: all approved unassigned subjects are eligible
+- team size `> 2`: only approved unassigned `STARTUP_PROJECT` subjects are eligible
+- enforced in catalog, wishlist validation, merit assignment, random assignment, and manual assignment
 
 ---
 
@@ -181,11 +317,49 @@ No runtime fallback to old role architecture.
   - `POST /api/admin/subjects/{id}/reject/`
   - `POST /api/admin/subjects/{id}/archive/`
 - Public authenticated catalog:
+  - `GET /api/subjects/catalog/`
   - `GET /api/subjects/`
   - `GET /api/subjects/{id}/`
 
+## Teams
+- Student/team leader:
+  - `GET /api/teams/me/`
+  - `POST /api/teams/{team_code}/invite/`
+  - `POST /api/team-invitations/{participation_id}/accept/`
+  - `POST /api/team-invitations/{participation_id}/reject/`
+  - `POST /api/teams/leave/`
+  - `POST /api/teams/{team_code}/remove-member/`
+  - `POST /api/teams/{team_code}/transfer-leadership/`
+  - `POST /api/teams/{team_code}/lock/`
+- Admin:
+  - `GET /api/admin/teams/`
+  - `GET /api/admin/teams/{team_code}/`
+  - `POST /api/admin/teams/{team_code}/remove-member/`
+  - `POST /api/admin/teams/{team_code}/transfer-leadership/`
+  - `POST /api/admin/teams/{team_code}/supervisors/`
+  - `POST /api/admin/teams/{team_code}/supervisors/remove/`
+  - `POST /api/admin/teams/{team_code}/dissolve/`
+
+## Wishes, appeals, assignment
+- Team-facing:
+  - `POST /api/wishlists/`
+  - `GET /api/wishlists/me/`
+  - `POST /api/appeals/`
+  - `GET /api/appeals/me/`
+  - `GET /api/assignments/me/`
+- Admin:
+  - `GET /api/admin/wishlists/`
+  - `GET /api/admin/wishlists/{wishlist_id}/`
+  - `POST /api/admin/assignments/merit/`
+  - `POST /api/admin/assignments/random/`
+  - `POST /api/admin/assignments/manual/`
+  - `POST /api/admin/assignments/{team_code}/validate/`
+  - `POST /api/admin/appeals/{appeal_id}/accept/`
+  - `POST /api/admin/appeals/{appeal_id}/reject/`
+
 ## Technical
 - `GET /api/health/`
+- `GET /api/campaign/current/`
 - `GET /api/schema/`
 - `GET /api/docs/`
 - `GET /admin/`
@@ -215,22 +389,20 @@ Hard cut-over completed on:
 ## 7) Out-of-Scope Domains (Still Not Implemented)
 
 These modules remain intentionally unimplemented as full workflows:
-- teams
-- wishes
-- appeals
 - deliverables and version history flow
 - defense flow and jury assignment flow
-- assignments engine
 - notifications/messaging/dashboard
 
-The architecture is now aligned so Sprint 5 can implement them without another foundational redesign.
+The architecture is now aligned so Sprint 7 can implement deliverable workflows without another foundational redesign.
 
 ---
 
 ## 8) Test Status
 
 Current local containerized test run:
-- `72 passed`
+- Sprint 6 isolated suite: `22 passed`
+- Campaign phase enforcement suite: `18 passed`
+- Full suite: run after the latest enforcement pass
 
 Command:
 - `docker compose run --rm web pytest -q`
@@ -239,10 +411,96 @@ Command:
 
 ## 9) Sprint 5 Technical Direction
 
-Recommended next implementation order:
-1. Team + TeamParticipation constraints
-2. WishList + WishItem with campaign-phase gating
-3. Assignment + appeal round model
-4. Deliverable + DeliverableVersion
-5. Defense + DefenseJuryAssignment with conflict constraints
+Sprint 5 delivered Team + TeamParticipant lifecycle governance.
 
+Implemented rules:
+- every managed student can receive a default solo team
+- active leaders can invite students while team is `FORMING`
+- invited students can accept/reject invitations
+- members can leave `FORMING` teams and receive a new solo team
+- leaders must transfer leadership before leaving
+- leaders can transfer leadership while `FORMING`
+- leaders can lock a valid `FORMING` team
+- pre-assignment student team size is capped at 7
+- only admins can manage supervisors
+- only admins can modify locked/validated teams
+- subject owner supervisor helper exists for future assignment integration
+
+## 10) Sprint 6 Technical Direction
+
+Sprint 6 delivered WishList + WishItem + Appeal and direct assignment services.
+
+Implemented rules:
+- teams submit ranked wishlists while `LOCKED`, or while `FORMING` with automatic lock after successful validation
+- only active leaders can submit wishlists and appeals
+- wishlist length uses `AcademicYear.wishlist_size`
+- if fewer compatible subjects exist than configured size, teams submit all compatible subjects
+- no empty wishlist is accepted
+- duplicate subjects, duplicate ranks, and non-continuous ranks are rejected
+- catalog excludes assigned subjects
+- catalog applies team-size compatibility
+- merit assignment sorts teams by computed annual average
+- missing student annual averages count as `10.00`
+- teams are skipped from merit assignment only if they have no active student members
+- random assignment respects wishlist rank and supports deterministic seed for tests
+- manual assignment validates team status, subject availability, and compatibility
+- assignment reserves the subject and keeps the team `LOCKED`
+- manual validation changes the team to `VALIDATED` and records validation metadata
+- accepted appeals release the previous subject and open the second round
+- rejected appeals keep assignment unchanged
+
+## 11) Campaign Phase Enforcement Pass
+
+This corrective pass adds centralized campaign-window enforcement without creating a single "current phase".
+
+Optimized phase list:
+- `CAMPAIGN_SETUP`
+- `SUBJECT_MANAGEMENT`
+- `TEAM_FORMATION`
+- `WISHLIST_1`
+- `ASSIGNMENT_REVIEW_1`
+- `RESULTS_AND_APPEALS`
+- `WISHLIST_2`
+- `ASSIGNMENT_REVIEW_2`
+- `WORK_AND_SUPERVISION`
+- `DEFENSE_WINDOW`
+- `ARCHIVE`
+
+Several phases may be open at the same time. A phase is open when it belongs to the relevant active academic year, is not archived, has started, and has not ended unless its end date is intentionally null.
+
+Central service:
+- `CampaignPhaseService.is_open(...)`
+- `CampaignPhaseService.require_open(...)`
+- `CampaignPhaseService.get_open_phases(...)`
+- `CampaignPhaseService.get_user_action_availability(...)`
+
+Phase-to-action mapping:
+- `TEAM_FORMATION`: student invitations, accept/reject, leave, member removal by leader, leadership transfer by leader, manual lock
+- `SUBJECT_MANAGEMENT`: teacher subject create/edit/submit/resubmit and admin approve/reject
+- `WISHLIST_1`: first wishlist submission and student subject catalog visibility
+- `ASSIGNMENT_REVIEW_1`: first round merit/random/manual assignment and assignment validation
+- `RESULTS_AND_APPEALS`: student assignment result visibility, appeal submission, appeal review
+- `WISHLIST_2`: second wishlist submission and catalog visibility only for accepted-appeal teams
+- `ASSIGNMENT_REVIEW_2`: second round assignment and validation
+- `WORK_AND_SUPERVISION`: reserved for Sprint 7 deliverables
+- `DEFENSE_WINDOW`: reserved for Sprint 8 defense/jury/PV
+
+Academic-year consistency:
+- student creation assigns the active academic year when omitted
+- student creation fails cleanly if no active academic year exists
+- solo teams use the student's active campaign year
+- subject creation uses the active academic year
+- wishlist items must belong to the team's academic year
+- assignment rejects team/subject year mismatches
+- student catalog uses the student's active team academic year
+
+Visibility rules:
+- student subject catalog is hidden unless the relevant wishlist phase is open
+- second wishlist catalog is available only to teams with an accepted appeal
+- student assignment result endpoint is hidden until `RESULTS_AND_APPEALS`
+- admin internal assignment operations remain controlled by assignment review phases
+
+Recommended next implementation order:
+1. Deliverable submission and review workflow under `WORK_AND_SUPERVISION`
+2. Defense authorization and scheduling under `DEFENSE_WINDOW`
+3. Jury assignment and PV workflow

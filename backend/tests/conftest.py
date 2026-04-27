@@ -1,6 +1,10 @@
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 
 from apps.accounts.models import PlatformAccessGrant, StudentProfile, TeacherProfile, User
+from apps.campaigns.models import CampaignPhase
 
 
 @pytest.fixture
@@ -99,3 +103,18 @@ def super_admin_user(user_factory):
         with_platform_access=True,
         platform_access_level=PlatformAccessGrant.AccessLevel.SUPER_ADMIN,
     )
+
+
+@pytest.fixture
+def open_campaign_phase(db):
+    def create_phase(academic_year, phase_type, *, display_order=1, days_before=1, days_after=1):
+        now = timezone.now()
+        return CampaignPhase.objects.create(
+            academic_year=academic_year,
+            phase_type=phase_type,
+            start_at=now - timedelta(days=days_before),
+            end_at=now + timedelta(days=days_after) if days_after is not None else None,
+            display_order=display_order,
+        )
+
+    return create_phase
