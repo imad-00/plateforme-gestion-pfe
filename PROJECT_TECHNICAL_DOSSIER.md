@@ -1,7 +1,7 @@
 # PFE Management Platform Backend
 ## Technical Dossier - Post Convergence Architecture
 
-Version date: 2026-04-26
+Version date: 2026-04-28
 
 ---
 
@@ -112,6 +112,16 @@ Rules:
 - uniqueness per year:
   - `(academic_year, phase_type)`
   - `(academic_year, display_order)`
+
+Important active phase family:
+- `TEAM_FORMATION`
+- `WISHLIST_1`
+- `ASSIGNMENT_REVIEW_1`
+- `RESULTS_AND_APPEALS`
+- `WISHLIST_2`
+- `ASSIGNMENT_REVIEW_2`
+- `WORK_AND_SUPERVISION`
+- `DEFENSE_WINDOW`
 
 ## 3.4 Topics
 
@@ -252,13 +262,70 @@ Assignment result transitions:
 Team average rule:
 - computed from active student participants only
 - uses `StudentProfile.annual_average`
-- missing averages are skipped
-- if all active students are missing averages, `Team.annual_average = null` and the team is skipped in merit assignment
+- missing averages default to `10.00`
+- if a team has no active student members, `Team.annual_average = null` and the team is skipped in merit assignment
 
 Subject compatibility rule:
 - team size `<= 2`: all approved unassigned subjects are eligible
 - team size `> 2`: only approved unassigned `STARTUP_PROJECT` subjects are eligible
 - enforced in catalog, wishlist validation, merit assignment, random assignment, and manual assignment
+
+## 3.7 Deliverables
+
+Sprint 7 intentionally keeps deliverables simple.
+
+### `DeliverableFile`
+Internal work file uploaded by a validated team during `WORK_AND_SUPERVISION`:
+- `id`
+- `team`
+- `file`
+- `original_filename`
+- `file_size`
+- `content_type`
+- `uploaded_by`
+- `uploaded_at`
+- `comment`
+- `review_status` (`PENDING`, `ACCEPTED`, `NEEDS_REVISION`, `REJECTED`)
+- `reviewed_by`
+- `reviewed_at`
+- `review_comment`
+- timestamps
+
+### `DeliverableFileComment`
+Flat coordination note attached to a file:
+- `id`
+- `deliverable_file`
+- `author`
+- `text`
+- `created_at`
+- `updated_at`
+
+Rules:
+- no `DeliverableDefinition`
+- no `DeliverableVersion`
+- no version numbering
+- no deadlines
+- no max upload count
+- no final submission lock
+- every upload creates a new record
+- old files are not overwritten or hard-deleted
+- `ACCEPTED` means supervisor feedback only, not administrative finalization
+- students can continue uploading after `ACCEPTED`, `REJECTED`, or `NEEDS_REVISION`
+- internal and external supervisors can review the same file multiple times, with the latest review overwriting the previous one
+- flat comments are visible to the same team workspace and supervisors
+- comments are not threaded discussions
+- comments are append-only coordination/history notes in this sprint
+
+Sprint 7 services:
+- `DeliverableFileService`
+
+Service responsibilities:
+- list current team files for active student members
+- upload file for active leader/member of a `VALIDATED` team
+- list supervised teams for contextual supervisors
+- list files for a supervised team
+- add flat comment to a file for active team members or active supervisors
+- review file during `WORK_AND_SUPERVISION`
 
 ---
 
@@ -357,6 +424,17 @@ No runtime fallback to old role architecture.
   - `POST /api/admin/appeals/{appeal_id}/accept/`
   - `POST /api/admin/appeals/{appeal_id}/reject/`
 
+## Deliverable files and supervision
+- Team-facing:
+  - `GET /api/deliverable-files/me/`
+  - `POST /api/deliverable-files/upload/`
+  - `GET /api/deliverable-files/{file_id}/`
+  - `POST /api/deliverable-files/{file_id}/comments/`
+- Supervisor-facing:
+  - `GET /api/supervision/teams/`
+  - `GET /api/supervision/teams/{team_code}/files/`
+  - `POST /api/deliverable-files/{file_id}/review/`
+
 ## Technical
 - `GET /api/health/`
 - `GET /api/campaign/current/`
@@ -389,11 +467,16 @@ Hard cut-over completed on:
 ## 7) Out-of-Scope Domains (Still Not Implemented)
 
 These modules remain intentionally unimplemented as full workflows:
-- deliverables and version history flow
 - defense flow and jury assignment flow
 - notifications/messaging/dashboard
 
-The architecture is now aligned so Sprint 7 can implement deliverable workflows without another foundational redesign.
+What is still intentionally not implemented inside deliverables:
+- deliverable definitions
+- deadlines
+- version numbering/history models
+- final submission locking
+- grading
+- jury/PV/defense attachments
 
 ---
 
@@ -402,7 +485,8 @@ The architecture is now aligned so Sprint 7 can implement deliverable workflows 
 Current local containerized test run:
 - Sprint 6 isolated suite: `22 passed`
 - Campaign phase enforcement suite: `18 passed`
-- Full suite: run after the latest enforcement pass
+- Sprint 7 deliverable files suite: `28 passed`
+- Full suite: run after the latest Sprint 7 pass
 
 Command:
 - `docker compose run --rm web pytest -q`
@@ -499,6 +583,32 @@ Visibility rules:
 - second wishlist catalog is available only to teams with an accepted appeal
 - student assignment result endpoint is hidden until `RESULTS_AND_APPEALS`
 - admin internal assignment operations remain controlled by assignment review phases
+
+## 12) Sprint 7 Deliverable Files
+
+Sprint 7 implements a lightweight supervision workspace, not a formal deliverable-governance module.
+
+Operational rules:
+- upload requires `WORK_AND_SUPERVISION`
+- only active `LEADER` or `MEMBER` of the current team can upload
+- team must be `VALIDATED`
+- team must already have an assigned subject
+- internal `TEACHER` supervisors and `EXTERNAL_SUPERVISOR` users can review
+- active team members and active supervisors can add flat comments to a file
+- reviews are mutable and overwrite previous review fields
+- read-only listing is available to team members and supervisors according to their scope
+- platform admins do not receive deliverable monitoring endpoints in this sprint
+
+Storage:
+- uses the existing default Django storage, which is MinIO/S3-compatible when `USE_S3=true`
+- upload path follows `deliverables/<academic_year_id>/<team_code>/<filename>`
+
+What Sprint 7 does not mean:
+- `ACCEPTED` is not a final submission state
+- `ACCEPTED` does not block future uploads
+- uploaded files are internal team-supervisor work artifacts
+- comments are simple visible notes, not a threaded discussion system
+- Sprint 8 is still responsible for defense/jury/PV workflows
 
 Recommended next implementation order:
 1. Deliverable submission and review workflow under `WORK_AND_SUPERVISION`
