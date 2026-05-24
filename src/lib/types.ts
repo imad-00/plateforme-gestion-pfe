@@ -221,6 +221,17 @@ export interface SupervisionTeam {
   members_summary: MemberSummary[]
 }
 
+export interface ReceivedInvitation {
+  participation_id: string // uuid
+  team: {
+    team_code: string
+    name: string
+    status: TeamStatus
+    active_student_count: number
+  }
+  created_at: string
+}
+
 // ─── Wishlists ────────────────────────────────────────────────────────────────
 
 export interface WishlistItem {
