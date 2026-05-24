@@ -126,6 +126,28 @@ class TeamDetailSerializer(serializers.ModelSerializer):
         return subject.id if subject else None
 
 
+class ReceivedInvitationTeamSerializer(serializers.ModelSerializer):
+    active_student_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Team
+        fields = ["team_code", "name", "status", "active_student_count"]
+
+    def get_active_student_count(self, obj):
+        return obj.participants.filter(
+            role__in=[TeamParticipant.Role.LEADER, TeamParticipant.Role.MEMBER],
+            status=TeamParticipant.Status.ACTIVE,
+        ).count()
+
+
+class ReceivedInvitationSerializer(serializers.ModelSerializer):
+    team = ReceivedInvitationTeamSerializer(read_only=True)
+
+    class Meta:
+        model = TeamParticipant
+        fields = ["participation_id", "team", "created_at"]
+
+
 class InviteStudentSerializer(serializers.Serializer):
     student_id = serializers.IntegerField(required=False)
     matricule = serializers.CharField(required=False)

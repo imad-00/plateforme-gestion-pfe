@@ -3,6 +3,7 @@ from django.urls import path
 from apps.teams.views import (
     LeaveTeamView,
     MyTeamView,
+    ReceivedTeamInvitationsView,
     TeamInvitationAcceptView,
     TeamInvitationRejectView,
     TeamInviteStudentView,
@@ -22,6 +23,8 @@ urlpatterns = [
         name="team-transfer-leadership",
     ),
     path("teams/<str:team_code>/lock/", TeamLockView.as_view(), name="team-lock"),
+    # must be before the <uuid> patterns so "received" isn't matched as a uuid
+    path("team-invitations/received/", ReceivedTeamInvitationsView.as_view(), name="team-invitations-received"),
     path(
         "team-invitations/<uuid:participation_id>/accept/",
         TeamInvitationAcceptView.as_view(),

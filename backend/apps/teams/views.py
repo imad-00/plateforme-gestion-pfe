@@ -10,6 +10,7 @@ from apps.teams.serializers import (
     AddSupervisorSerializer,
     AdminRemoveMemberSerializer,
     InviteStudentSerializer,
+    ReceivedInvitationSerializer,
     RemoveMemberSerializer,
     RemoveSupervisorSerializer,
     TeamDetailSerializer,
@@ -30,6 +31,24 @@ class MyTeamView(APIView):
         if team is None:
             team = TeamService.create_solo_team_for_student(request.user)
         return Response(TeamDetailSerializer(team).data, status=status.HTTP_200_OK)
+
+
+class ReceivedTeamInvitationsView(APIView):
+    permission_classes = [IsAuthenticatedAndActiveAccount]
+
+    @extend_schema(tags=["Teams"], responses=ReceivedInvitationSerializer(many=True))
+    def get(self, request):
+        invitations = (
+            TeamParticipant.objects
+            .select_related("team")
+            .prefetch_related("team__participants")
+            .filter(
+                user=request.user,
+                role=TeamParticipant.Role.MEMBER,
+                status=TeamParticipant.Status.PENDING,
+            )
+        )
+        return Response(ReceivedInvitationSerializer(invitations, many=True).data)
 
 
 class TeamInviteStudentView(APIView):
