@@ -1,13 +1,13 @@
 import type { Metadata } from 'next'
-import { PageHeader } from '@/components/layout/page-header'
+import { Suspense } from 'react'
+import { DeliverablesView } from './deliverables-view'
 
 export const metadata: Metadata = { title: 'Deliverables — GradeX' }
 
 export default function DeliverablesPage() {
   return (
-    <>
-      <PageHeader title="Deliverables" description="Upload and track your project deliverable files." />
-      <p className="text-sm text-muted-foreground">Coming soon.</p>
-    </>
+    <Suspense>
+      <DeliverablesView />
+    </Suspense>
   )
 }

@@ -340,7 +340,7 @@ export interface BulkAssignmentResult {
 
 export interface DeliverableFileComment {
   id: string // uuid
-  author: User
+  author: MemberSummary
   text: string
   created_at: string
   updated_at: string
@@ -353,11 +353,11 @@ export interface DeliverableFile {
   original_filename: string
   file_size: number
   content_type: string
-  uploaded_by: User
+  uploaded_by: MemberSummary
   uploaded_at: string
   comment: string | null
   review_status: ReviewStatus
-  reviewed_by: User | null
+  reviewed_by: MemberSummary | null
   reviewed_at: string | null
   review_comment: string | null
   comments: DeliverableFileComment[]
