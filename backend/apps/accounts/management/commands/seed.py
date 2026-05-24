@@ -136,6 +136,94 @@ _SUBJECT_SPECS = [
     },
     {
         "subject_code": "SEED-006",
+        "title": "Multimodal Sentiment Analysis for Social-Media Content",
+        "description": (
+            "Build a pipeline that fuses text, image, and audio signals to classify "
+            "sentiment in short-form social-media posts. Compare fusion strategies and "
+            "evaluate on a multilingual benchmark including Algerian dialect."
+        ),
+        "subject_type": Subject.SubjectType.RESEARCH_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-009",
+        "title": "Open-Source LMS for Offline-First Schools",
+        "description": (
+            "Develop a lightweight learning management system that works fully offline "
+            "on low-spec hardware and syncs to a central server when connectivity is "
+            "available. Targets rural schools with intermittent internet access."
+        ),
+        "subject_type": Subject.SubjectType.STARTUP_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-010",
+        "title": "Automated Vulnerability Scanner for REST APIs",
+        "description": (
+            "Design and implement a black-box scanner that detects common REST API "
+            "vulnerabilities (OWASP API Top 10) through automated fuzzing and traffic "
+            "analysis. Validated against a set of intentionally vulnerable lab services."
+        ),
+        "subject_type": Subject.SubjectType.APPLIED_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-011",
+        "title": "Graph Neural Networks for Citation-Network Analysis",
+        "description": (
+            "Apply GNN architectures (GCN, GAT, GraphSAGE) to tasks on academic citation "
+            "graphs: link prediction, paper classification, and author disambiguation. "
+            "Release a reproducible benchmark and pre-trained model weights."
+        ),
+        "subject_type": Subject.SubjectType.RESEARCH_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-012",
+        "title": "Peer-to-Peer Carpooling App for University Campuses",
+        "description": (
+            "Build a mobile-first carpooling platform tailored to university commuters. "
+            "Features real-time ride matching, in-app chat, driver ratings, and a "
+            "route optimisation engine. Monetisation via optional premium pass."
+        ),
+        "subject_type": Subject.SubjectType.STARTUP_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-013",
+        "title": "Digital Twin for Industrial Equipment Monitoring",
+        "description": (
+            "Create a digital twin of a CNC machine or industrial pump using real sensor "
+            "streams. The twin runs predictive-maintenance models and raises alerts before "
+            "failure. Evaluated on a hardware-in-the-loop test bench."
+        ),
+        "subject_type": Subject.SubjectType.APPLIED_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-014",
+        "title": "Explainable Credit-Scoring Model for Microfinance",
+        "description": (
+            "Develop a machine-learning credit-scoring system for micro-loan applicants "
+            "with limited credit history. Incorporate SHAP-based explanations so loan "
+            "officers can justify decisions and regulators can audit outcomes."
+        ),
+        "subject_type": Subject.SubjectType.RESEARCH_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-015",
+        "title": "AR Navigation Assistant for University Buildings",
+        "description": (
+            "Build an augmented-reality indoor navigation app using ARCore/ARKit and a "
+            "floor-plan graph. Guides students and visitors to rooms, labs, and offices "
+            "via overlaid arrows without requiring GPS or dedicated beacons."
+        ),
+        "subject_type": Subject.SubjectType.STARTUP_PROJECT,
+        "status": Subject.Status.APPROVED,
+    },
+    {
+        "subject_code": "SEED-016",
         "title": "Blockchain-Based Academic Credential Verification",
         "description": (
             "Design a system for issuing and verifying academic credentials on a "
@@ -146,7 +234,7 @@ _SUBJECT_SPECS = [
         "status": Subject.Status.SUBMITTED,
     },
     {
-        "subject_code": "SEED-007",
+        "subject_code": "SEED-017",
         "title": "NLP for Arabic Legal Text Classification",
         "description": (
             "Investigate fine-tuning transformer models on an Algerian legal corpus for "
@@ -157,7 +245,7 @@ _SUBJECT_SPECS = [
         "status": Subject.Status.SUBMITTED,
     },
     {
-        "subject_code": "SEED-008",
+        "subject_code": "SEED-018",
         "title": "Autonomous Drone Path Planning in Dynamic Environments",
         "description": (
             "Implement reinforcement-learning-based path planning algorithms for drones "
