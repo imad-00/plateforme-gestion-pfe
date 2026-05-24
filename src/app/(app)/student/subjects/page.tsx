@@ -1,13 +1,13 @@
 import type { Metadata } from 'next'
-import { PageHeader } from '@/components/layout/page-header'
+import { Suspense } from 'react'
+import { SubjectsView } from './subjects-view'
 
 export const metadata: Metadata = { title: 'Subjects — GradeX' }
 
 export default function StudentSubjectsPage() {
   return (
-    <>
-      <PageHeader title="Subjects" description="Browse the subject catalog and submit your wishlist." />
-      <p className="text-sm text-muted-foreground">Coming soon.</p>
-    </>
+    <Suspense>
+      <SubjectsView />
+    </Suspense>
   )
 }

@@ -60,14 +60,19 @@ export type ReviewStatus = 'PENDING' | 'ACCEPTED' | 'NEEDS_REVISION' | 'REJECTED
 // ─── User ─────────────────────────────────────────────────────────────────────
 
 export interface StudentProfile {
-  academic_year: number
+  academic_year: number | null
   annual_average: string | null // DRF DecimalField serialises as string
-  speciality: string
+  moyenne_generale: string | null
+  speciality: string | null
+  specialite: string | null
+  cv_file_url: string | null
+  skills_summary: string | null
 }
 
 export interface TeacherProfile {
-  grade: string
-  department: string
+  grade: string | null
+  department: string | null
+  departement: string | null
 }
 
 export interface User {
@@ -91,8 +96,9 @@ export interface User {
 export interface AcademicYear {
   id: number
   year: string
-  start_date: string
-  end_date: string
+  year_label: string
+  start_date: string | null
+  end_date: string | null
   status: AcademicYearStatus
   wishlist_size: number
   created_at: string
@@ -114,11 +120,17 @@ export interface CampaignPhase {
 }
 
 export interface CampaignStatus {
-  teacher_can_propose_subjects: boolean
-  student_can_form_teams: boolean
-  student_can_submit_wishlist: boolean
-  student_can_see_results: boolean
-  student_can_appeal: boolean
+  academic_year: { id: number; label: string; status: AcademicYearStatus } | null
+  open_phases: PhaseType[]
+  actions: {
+    can_manage_team: boolean
+    can_submit_first_wishlist: boolean
+    can_view_subject_catalog: boolean
+    can_run_first_assignment: boolean
+    can_view_assignment_result: boolean
+    can_submit_appeal: boolean
+    can_submit_second_wishlist: boolean
+  }
 }
 
 // ─── Platform Access Grants ───────────────────────────────────────────────────
@@ -136,9 +148,40 @@ export interface PlatformAccessGrant {
 
 // ─── Subjects ─────────────────────────────────────────────────────────────────
 
+// Slim summary types nested inside Subject responses
+export interface SubjectAcademicYearSummary {
+  id: number
+  year: string
+  status: AcademicYearStatus
+}
+
+export interface SubjectTeacherSummary {
+  id: number
+  matricule: string
+  first_name: string
+  last_name: string
+  email: string
+}
+
+// Returned by GET /api/subjects/ (public catalog) and embedded in wishlist items
+export interface PublicSubject {
+  id: number
+  subject_code: string | null
+  title: string
+  description: string
+  subject_type: SubjectType
+  attachment_url: string | null
+  attachment_key: string | null
+  proposed_by: SubjectTeacherSummary
+  academic_year: SubjectAcademicYearSummary
+  created_at: string
+  updated_at: string
+}
+
+// Returned by GET /api/admin/subjects/ and GET /api/teacher/subjects/
 export interface Subject {
   id: number
-  subject_code: string
+  subject_code: string | null
   title: string
   description: string
   subject_type: SubjectType
@@ -146,14 +189,14 @@ export interface Subject {
   attachment_key: string | null
   attachment_original_name: string | null
   attachment_mime_type: string | null
-  attachment_size_bytes: number | null
+  attachment_size_bytes: string | null // DRF serialises as string
   status: SubjectStatus
-  academic_year: AcademicYear // nested object
-  proposed_by: User
+  academic_year: SubjectAcademicYearSummary
+  proposed_by: SubjectTeacherSummary
   rejection_reason: string | null
   submitted_at: string | null
   reviewed_at: string | null
-  reviewed_by: User | null
+  reviewed_by: SubjectTeacherSummary | number | null // nested in admin view, integer in teacher view
   assigned_at: string | null
   assigned_to_team: string | null // team_code string
   created_at: string
@@ -183,7 +226,7 @@ export interface Team {
   selected_subject_id: number | null
   active_student_count: number
   assignment_validated_at: string | null
-  assignment_validated_by: User | null
+  assignment_validated_by: number | null // integer user ID
   active_leader: Participation | null
   active_members: Participation[]
   active_supervisors: Participation[]
@@ -193,13 +236,20 @@ export interface Team {
   dissolved_at: string | null
 }
 
-// Slim Team shape used when Team is nested inside other responses
+// Base Team shape embedded inside Wishlist and Appeal responses
+// (does NOT include selected_subject_id, active_leader, active_members, etc.)
 export interface TeamSummary {
   team_code: string
   name: string
   academic_year: number
   status: TeamStatus
-  selected_subject_id: number | null
+  selection_round: SelectionRound
+  annual_average: string | null
+  assignment_validated_at: string | null
+  assignment_validated_by: number | null // integer user ID
+  created_at: string
+  updated_at: string
+  dissolved_at: string | null
 }
 
 export interface MemberSummary {
@@ -216,8 +266,8 @@ export interface SupervisionTeam {
   name: string
   academic_year: number
   status: TeamStatus
-  selected_subject_id: number | null
-  files_count: number
+  selected_subject_id: string | null // serialized as string by DRF
+  files_count: string // serialized as string by DRF
   members_summary: MemberSummary[]
 }
 
@@ -236,7 +286,7 @@ export interface ReceivedInvitation {
 
 export interface WishlistItem {
   wishitem_id: string // uuid
-  subject: Subject
+  subject: PublicSubject
   rank: number
 }
 
@@ -245,9 +295,9 @@ export interface Wishlist {
   team: TeamSummary
   selection_round: SelectionRound
   status: WishlistStatus
-  submitted_by: User
-  submitted_at: string
-  item_count: number
+  submitted_by: number | null // integer user ID
+  submitted_at: string | null
+  item_count: string // DRF serialises as string
   items: WishlistItem[]
   created_at: string
   updated_at: string
@@ -260,8 +310,8 @@ export interface Appeal {
   team: TeamSummary
   reason: string
   status: AppealStatus
-  submitted_by: User
-  reviewed_by: User | null
+  submitted_by: number | null // integer user ID
+  reviewed_by: number | null // integer user ID
   submitted_at: string
   resolved_at: string | null
   admin_comment: string | null
