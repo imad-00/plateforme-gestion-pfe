@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,6 +21,8 @@ interface ConfirmDialogProps {
   /** Use true for destructive actions (archive, dissolve, revoke). Styles the confirm button red. */
   destructive?: boolean
   isLoading?: boolean
+  /** Optional error message shown inside the dialog after a failed action. */
+  error?: string | null
   onConfirm: () => void
 }
 
@@ -33,6 +35,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   destructive = false,
   isLoading = false,
+  error,
   onConfirm,
 }: ConfirmDialogProps) {
   return (
@@ -42,6 +45,13 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg bg-status-error-bg p-3 text-sm text-status-error-fg">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <DialogFooter>
           <Button
