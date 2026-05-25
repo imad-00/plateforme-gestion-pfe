@@ -393,6 +393,9 @@ class AssignmentService(AssignmentPermissionMixin):
         team.save(update_fields=["status", "assignment_validated_at", "assignment_validated_by", "updated_at"])
         TeamService.ensure_subject_owner_supervisor(team, subject)
         team.refresh_from_db()
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_assignment_result_available(team, actor=admin_user)
         return team
 
 
@@ -415,12 +418,16 @@ class AppealService(AssignmentPermissionMixin):
         if Appeal.objects.filter(team=team).exists():
             raise serializers.ValidationError({"team": "This team already submitted an appeal."})
 
-        return Appeal.objects.create(
+        appeal = Appeal.objects.create(
             team=team,
             reason=clean_reason,
             status=Appeal.Status.PENDING,
             submitted_by=actor,
         )
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_appeal_submitted(appeal, actor=actor)
+        return appeal
 
     @staticmethod
     @transaction.atomic
@@ -451,6 +458,9 @@ class AppealService(AssignmentPermissionMixin):
         appeal.reviewed_by = admin_user
         appeal.resolved_at = timezone.now()
         appeal.save(update_fields=["status", "reviewed_by", "resolved_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_appeal_decision(appeal, accepted=True, actor=admin_user)
         return appeal
 
     @staticmethod
@@ -467,4 +477,7 @@ class AppealService(AssignmentPermissionMixin):
         appeal.resolved_at = timezone.now()
         appeal.admin_comment = (admin_comment or "").strip()
         appeal.save(update_fields=["status", "reviewed_by", "resolved_at", "admin_comment", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_appeal_decision(appeal, accepted=False, actor=admin_user)
         return appeal

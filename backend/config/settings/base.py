@@ -54,6 +54,10 @@ INSTALLED_APPS = [
     "apps.deliverables",
     "apps.defenses",
     "apps.archives",
+    "apps.reports",
+    "apps.notifications",
+    "apps.dashboard",
+    "apps.imports",
     "apps.audit",
 ]
 

@@ -60,6 +60,11 @@ class AdminCampaignPhaseDetailUpdateView(APIView):
                 {"detail": "Archived campaign phase cannot be updated."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if phase.academic_year.status != "ACTIVE":
+            return Response(
+                {"academic_year": "Campaign phases can be modified only for ACTIVE academic years."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = CampaignPhaseSerializer(phase, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         phase = serializer.save()
@@ -72,6 +77,11 @@ class AdminCampaignPhaseArchiveView(APIView):
     @extend_schema(tags=["Campaign Phases"], responses={200: CampaignPhaseSerializer})
     def post(self, request, pk):
         phase = get_object_or_404(CampaignPhase, pk=pk)
+        if phase.academic_year.status != "ACTIVE":
+            return Response(
+                {"academic_year": "Campaign phases can be modified only for ACTIVE academic years."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         phase.is_archived = True
         phase.save(update_fields=["is_archived", "updated_at"])
         return Response(CampaignPhaseSerializer(phase).data, status=status.HTTP_200_OK)

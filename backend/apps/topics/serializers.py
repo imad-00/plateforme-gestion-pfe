@@ -261,6 +261,16 @@ class SubjectWorkflowService:
                 "updated_at",
             ]
         )
+        from apps.notifications.models import Notification
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_subject_event(
+            subject,
+            Notification.Type.SUBJECT_SUBMITTED,
+            "Subject submitted",
+            f"Your subject {subject.title} was submitted.",
+            actor=subject.proposed_by,
+        )
         return subject
 
     @staticmethod
@@ -286,6 +296,16 @@ class SubjectWorkflowService:
                 "reviewed_by",
                 "updated_at",
             ]
+        )
+        from apps.notifications.models import Notification
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_subject_event(
+            subject,
+            Notification.Type.SUBJECT_RESUBMITTED,
+            "Subject resubmitted",
+            f"Your subject {subject.title} was resubmitted.",
+            actor=subject.proposed_by,
         )
         return subject
 
@@ -313,6 +333,16 @@ class SubjectWorkflowService:
                 "reviewed_by",
                 "updated_at",
             ]
+        )
+        from apps.notifications.models import Notification
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_subject_event(
+            subject,
+            Notification.Type.SUBJECT_APPROVED,
+            "Subject approved",
+            f"Your subject {subject.title} was approved.",
+            actor=reviewer,
         )
         return subject
 
@@ -345,11 +375,22 @@ class SubjectWorkflowService:
                 "updated_at",
             ]
         )
+        from apps.notifications.models import Notification
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_subject_event(
+            subject,
+            Notification.Type.SUBJECT_REJECTED,
+            "Subject rejected",
+            f"Your subject {subject.title} was rejected.",
+            actor=reviewer,
+        )
         return subject
 
     @staticmethod
     @transaction.atomic
     def archive(subject: Subject):
+        SubjectWorkflowService._ensure_active_academic_year_subject(subject)
         if subject.status == Subject.Status.ARCHIVED:
             return subject
 

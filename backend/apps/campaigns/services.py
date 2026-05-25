@@ -17,6 +17,7 @@ class CampaignPhaseService:
         CampaignPhase.PhaseType.ASSIGNMENT_REVIEW_2: "The second assignment review phase is not open.",
         CampaignPhase.PhaseType.RESULTS_AND_APPEALS: "The results and appeals phase is not open.",
         CampaignPhase.PhaseType.WORK_AND_SUPERVISION: "The work and supervision phase is not open.",
+        CampaignPhase.PhaseType.DEFENSE_WINDOW: "The defense window phase is not open.",
     }
 
     @staticmethod

@@ -8,6 +8,7 @@ from apps.accounts.permissions import (
     IsAdminOrSuperAdmin,
     IsAuthenticatedAndActiveAccount,
     IsTeacherOrAbove,
+    get_platform_levels,
 )
 from apps.academics.models import AcademicYear
 from apps.assignments.services import WishListService
@@ -32,6 +33,8 @@ class TeacherSubjectListCreateView(APIView):
         queryset = Subject.objects.filter(proposed_by=request.user).select_related(
             "academic_year", "reviewed_by"
         )
+        if not get_platform_levels(request.user).intersection({"ADMIN", "SUPER_ADMIN"}):
+            queryset = queryset.exclude(academic_year__status=AcademicYear.Status.ARCHIVED)
         paginator = DefaultPageNumberPagination()
         page = paginator.paginate_queryset(queryset, request)
         serializer = TeacherSubjectListSerializer(page, many=True)
@@ -49,8 +52,11 @@ class TeacherSubjectDetailUpdateView(APIView):
     permission_classes = [IsTeacherOrAbove]
 
     def _get_subject(self, request, pk):
+        queryset = Subject.objects.select_related("academic_year", "reviewed_by")
+        if not get_platform_levels(request.user).intersection({"ADMIN", "SUPER_ADMIN"}):
+            queryset = queryset.exclude(academic_year__status=AcademicYear.Status.ARCHIVED)
         return get_object_or_404(
-            Subject.objects.select_related("academic_year", "reviewed_by"),
+            queryset,
             pk=pk,
             proposed_by=request.user,
         )

@@ -32,6 +32,7 @@ class TeamService:
                 role__in=[TeamParticipant.Role.LEADER, TeamParticipant.Role.MEMBER],
             )
             .exclude(team__status__in=[Team.Status.DISSOLVED, Team.Status.ARCHIVED])
+            .exclude(team__academic_year__status=AcademicYear.Status.ARCHIVED)
             .order_by("-joined_at", "-created_at")
             .first()
         )
@@ -47,6 +48,7 @@ class TeamService:
                 role__in=[TeamParticipant.Role.LEADER, TeamParticipant.Role.MEMBER],
             )
             .exclude(team__status__in=[Team.Status.DISSOLVED, Team.Status.ARCHIVED])
+            .exclude(team__academic_year__status=AcademicYear.Status.ARCHIVED)
         )
 
     @staticmethod
@@ -115,6 +117,9 @@ class TeamService:
 
     @staticmethod
     def ensure_team_can_be_modified_by_admin(team):
+        from apps.archives.services import AcademicYearLifecycleService
+
+        AcademicYearLifecycleService.assert_academic_year_writable(team.academic_year)
         if team.status == Team.Status.ARCHIVED:
             raise serializers.ValidationError({"team": "Archived teams cannot be modified."})
 
@@ -172,6 +177,9 @@ class TeamService:
     @transaction.atomic
     def dissolve_team(team, actor=None, reason=None):
         team = Team.objects.select_for_update().get(pk=team.pk)
+        from apps.archives.services import AcademicYearLifecycleService
+
+        AcademicYearLifecycleService.assert_academic_year_writable(team.academic_year)
         if team.status in {Team.Status.DISSOLVED, Team.Status.ARCHIVED}:
             return team
         now = timezone.now()
@@ -209,6 +217,9 @@ class TeamService:
         TeamService.assert_operational_team_has_exactly_one_leader(team)
         team.status = Team.Status.LOCKED
         team.save(update_fields=["status", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_locked(team, actor=actor)
         return team
 
     @staticmethod
@@ -253,12 +264,16 @@ class InvitationService:
         ).exists():
             raise serializers.ValidationError({"student": "Student already has an active or pending participation in this team."})
         TeamService.ensure_team_size_limit(team, extra_students=1)
-        return TeamParticipant.objects.create(
+        participation = TeamParticipant.objects.create(
             team=team,
             user=invited_user,
             role=TeamParticipant.Role.MEMBER,
             status=TeamParticipant.Status.PENDING,
         )
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_invitation_received(participation, actor=actor)
+        return participation
 
     @staticmethod
     @transaction.atomic
@@ -283,6 +298,9 @@ class InvitationService:
         participation.status = TeamParticipant.Status.ACTIVE
         participation.joined_at = timezone.now()
         participation.save(update_fields=["status", "joined_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_member_joined(participation.team, actor, actor=actor)
         return participation
 
     @staticmethod
@@ -317,6 +335,9 @@ class ParticipationService:
         participation.status = TeamParticipant.Status.ENDED
         participation.ended_at = now
         participation.save(update_fields=["status", "ended_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_member_left(team, actor, actor=actor)
         TeamService.create_solo_team_for_student(actor, academic_year=team.academic_year)
         TeamService.dissolve_if_no_active_students(team, actor=actor)
         return participation
@@ -342,6 +363,9 @@ class ParticipationService:
         target_participation.status = TeamParticipant.Status.ENDED
         target_participation.ended_at = now
         target_participation.save(update_fields=["status", "ended_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_member_removed(team, target_user, actor=actor)
         TeamService.create_solo_team_for_student(target_user, academic_year=team.academic_year)
         return target_participation
 
@@ -373,11 +397,15 @@ class ParticipationService:
         if not new_leader:
             raise serializers.ValidationError({"new_leader": "New leader must be an active member of the same team."})
 
+        old_leader_user = old_leader.user
         old_leader.role = TeamParticipant.Role.MEMBER
         old_leader.save(update_fields=["role", "updated_at"])
         new_leader.role = TeamParticipant.Role.LEADER
         new_leader.save(update_fields=["role", "updated_at"])
         TeamService.assert_operational_team_has_exactly_one_leader(team)
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_leadership_transferred(team, new_leader.user, old_leader=old_leader_user, actor=actor)
         return team
 
     @staticmethod
@@ -410,6 +438,9 @@ class ParticipationService:
         target.status = TeamParticipant.Status.ENDED
         target.ended_at = now
         target.save(update_fields=["status", "ended_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_member_removed(team, target_user, actor=actor)
         remaining_students = TeamService.count_active_student_members(team)
         if remaining_students == 0:
             TeamService.dissolve_team(team, actor=actor)
