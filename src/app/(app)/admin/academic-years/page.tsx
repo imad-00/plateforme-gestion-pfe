@@ -1,13 +1,13 @@
 import type { Metadata } from 'next'
-import { PageHeader } from '@/components/layout/page-header'
+import { Suspense } from 'react'
+import { AcademicYearsView } from './academic-years-view'
 
 export const metadata: Metadata = { title: 'Academic Years — GradeX' }
 
 export default function AcademicYearsPage() {
   return (
-    <>
-      <PageHeader title="Academic Years" description="Manage academic years and campaign phases." />
-      <p className="text-sm text-muted-foreground">Coming soon.</p>
-    </>
+    <Suspense>
+      <AcademicYearsView />
+    </Suspense>
   )
 }
