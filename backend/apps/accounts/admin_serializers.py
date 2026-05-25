@@ -10,10 +10,19 @@ User = get_user_model()
 
 
 class StudentProfileAdminSerializer(serializers.ModelSerializer):
+    moyenne_generale = serializers.DecimalField(
+        source="annual_average",
+        max_digits=5,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+    )
+    specialite = serializers.CharField(source="speciality", required=False, allow_blank=True, allow_null=True)
+
     def validate_academic_year(self, value):
         if value is None:
             return value
-        if value.is_archived or not value.is_active:
+        if value.status != AcademicYear.Status.ACTIVE:
             raise serializers.ValidationError(
                 "Student profile must be linked to the active academic year."
             )
@@ -21,13 +30,23 @@ class StudentProfileAdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentProfile
-        fields = ["academic_year", "moyenne_generale", "specialite"]
+        fields = [
+            "academic_year",
+            "annual_average",
+            "moyenne_generale",
+            "speciality",
+            "specialite",
+            "cv_file_url",
+            "skills_summary",
+        ]
 
 
 class TeacherProfileAdminSerializer(serializers.ModelSerializer):
+    departement = serializers.CharField(source="department", required=False, allow_null=True, allow_blank=True)
+
     class Meta:
         model = TeacherProfile
-        fields = ["grade", "departement"]
+        fields = ["grade", "department", "departement"]
 
 
 class AdminUserListSerializer(serializers.ModelSerializer):
@@ -45,6 +64,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             "last_name",
             "business_identity",
             "account_status",
+            "must_reset_password",
             "platform_access_level",
             "student_profile",
             "teacher_profile",
@@ -77,6 +97,7 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             "last_name",
             "business_identity",
             "account_status",
+            "must_reset_password",
             "student_profile",
             "teacher_profile",
             "password",
@@ -105,7 +126,7 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             )
 
     def _get_active_academic_year(self):
-        return AcademicYear.objects.filter(is_active=True, is_archived=False).first()
+        return AcademicYear.objects.filter(status=AcademicYear.Status.ACTIVE).first()
 
     def validate(self, attrs):
         identity = attrs.get(
@@ -145,9 +166,31 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"password": "Password is required."})
 
         attrs.setdefault("account_status", User.AccountStatus.ACTIVE)
+
+        target_status = attrs.get(
+            "account_status",
+            getattr(self.instance, "account_status", User.AccountStatus.ACTIVE),
+        )
+        if (
+            self.instance is not None
+            and target_status != User.AccountStatus.ACTIVE
+            and self.instance.platform_access_grants.filter(revoked_at__isnull=True).exists()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "account_status": (
+                        "Revoke active platform access grants before suspending or archiving this account."
+                    )
+                }
+            )
         return attrs
 
     def _sync_platform_flags(self, user):
+        if user.account_status != User.AccountStatus.ACTIVE:
+            user.is_staff = False
+            user.is_superuser = False
+            return
+
         active_levels = set(
             user.platform_access_grants.filter(revoked_at__isnull=True).values_list(
                 "access_level", flat=True
@@ -207,6 +250,9 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
                 )
             effective_student_data["academic_year"] = active_year
             StudentProfile.objects.update_or_create(user=user, defaults=effective_student_data)
+            from apps.teams.services import TeamService
+
+            TeamService.create_solo_team_for_student(user, academic_year=active_year)
             TeacherProfile.objects.filter(user=user).delete()
             return
 

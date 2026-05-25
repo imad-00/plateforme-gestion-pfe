@@ -1,4 +1,6 @@
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 from django.db.models import Q
@@ -8,12 +10,6 @@ from apps.accounts.managers import UserManager
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    class GlobalRole(models.TextChoices):
-        STUDENT = "STUDENT", "Student"
-        TEACHER = "TEACHER", "Teacher"
-        ADMIN = "ADMIN", "Admin"
-        SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
-
     class BusinessIdentity(models.TextChoices):
         STUDENT = "STUDENT", "Student"
         TEACHER = "TEACHER", "Teacher"
@@ -30,13 +26,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    global_role = models.CharField(
-        max_length=20,
-        choices=GlobalRole.choices,
-        default=GlobalRole.STUDENT,
-    )
-    # Deprecated business field kept temporarily for backward compatibility.
-    # Access decisions now rely on business_identity + platform access grants.
     business_identity = models.CharField(
         max_length=30,
         choices=BusinessIdentity.choices,
@@ -47,8 +36,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         choices=AccountStatus.choices,
         default=AccountStatus.ACTIVE,
     )
-    is_active = models.BooleanField(default=True)
-    is_archived = models.BooleanField(default=False)
+    must_reset_password = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -61,10 +49,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = "accounts_user"
         indexes = [
-            models.Index(fields=["global_role"], name="accounts_user_role_idx"),
             models.Index(fields=["business_identity"], name="accounts_user_identity_idx"),
             models.Index(fields=["account_status"], name="accounts_user_status_idx"),
-            models.Index(fields=["is_archived"], name="accounts_user_archived_idx"),
         ]
 
     def __str__(self):
@@ -79,18 +65,33 @@ class User(AbstractBaseUser, PermissionsMixin):
         """Source of truth for user accessibility."""
         return self.account_status == self.AccountStatus.ACTIVE
 
-    def save(self, *args, **kwargs):
-        # Keep legacy boolean flags coherent with the new enum status.
-        if self.account_status == self.AccountStatus.ACTIVE:
-            self.is_active = True
-            self.is_archived = False
-        elif self.account_status == self.AccountStatus.SUSPENDED:
-            self.is_active = False
-            self.is_archived = False
-        elif self.account_status == self.AccountStatus.ARCHIVED:
-            self.is_active = False
-            self.is_archived = True
-        return super().save(*args, **kwargs)
+    def refresh_platform_flags(self):
+        """
+        Keep Django technical flags aligned with platform grants.
+        These flags are framework-level only, not business authorization source.
+        """
+        if not self.pk:
+            return
+
+        if self.account_status != self.AccountStatus.ACTIVE:
+            target_is_staff = False
+            target_is_superuser = False
+        else:
+            active_levels = set(
+                self.platform_access_grants.filter(revoked_at__isnull=True).values_list(
+                    "access_level", flat=True
+                )
+            )
+            target_is_staff = bool(active_levels)
+            target_is_superuser = self.platform_access_grants.model.AccessLevel.SUPER_ADMIN in active_levels
+
+        if self.is_staff != target_is_staff or self.is_superuser != target_is_superuser:
+            User.objects.filter(pk=self.pk).update(
+                is_staff=target_is_staff,
+                is_superuser=target_is_superuser,
+            )
+            self.is_staff = target_is_staff
+            self.is_superuser = target_is_superuser
 
 
 class StudentProfile(models.Model):
@@ -106,13 +107,16 @@ class StudentProfile(models.Model):
         null=True,
         blank=True,
     )
-    moyenne_generale = models.DecimalField(
-        max_digits=4,
+    annual_average = models.DecimalField(
+        max_digits=5,
         decimal_places=2,
         null=True,
         blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(20)],
     )
-    specialite = models.CharField(max_length=255, null=True, blank=True)
+    speciality = models.CharField(max_length=255, null=True, blank=True)
+    cv_file_url = models.CharField(max_length=500, blank=True)
+    skills_summary = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -123,6 +127,23 @@ class StudentProfile(models.Model):
         year_label = self.academic_year.year if self.academic_year else "No Academic Year"
         return f"{self.user.matricule} - {year_label}"
 
+    # Backward compatibility aliases; source fields now follow class diagram naming.
+    @property
+    def moyenne_generale(self):
+        return self.annual_average
+
+    @moyenne_generale.setter
+    def moyenne_generale(self, value):
+        self.annual_average = value
+
+    @property
+    def specialite(self):
+        return self.speciality
+
+    @specialite.setter
+    def specialite(self, value):
+        self.speciality = value
+
 
 class TeacherProfile(models.Model):
     user = models.OneToOneField(
@@ -131,7 +152,7 @@ class TeacherProfile(models.Model):
         related_name="teacher_profile",
     )
     grade = models.CharField(max_length=255, null=True, blank=True)
-    departement = models.CharField(max_length=255, null=True, blank=True)
+    department = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -140,6 +161,14 @@ class TeacherProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.matricule} - {self.grade or 'No Grade'}"
+
+    @property
+    def departement(self):
+        return self.department
+
+    @departement.setter
+    def departement(self, value):
+        self.department = value
 
 
 class AdministrativeStaffProfile(models.Model):
@@ -168,6 +197,7 @@ class ExternalSupervisorProfile(models.Model):
     )
     organization = models.CharField(max_length=255, null=True, blank=True)
     job_title = models.CharField(max_length=255, null=True, blank=True)
+    expertise_area = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -236,7 +266,68 @@ class PlatformAccessGrant(models.Model):
 
         if self.revoked_at is not None and self.revoked_at < self.granted_at:
             raise ValidationError({"revoked_at": "revoked_at cannot be before granted_at."})
+        if self.revoked_at is None and self.user.account_status != User.AccountStatus.ACTIVE:
+            raise ValidationError({"user": "Only ACTIVE users can hold active platform access grants."})
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        return super().save(*args, **kwargs)
+        result = super().save(*args, **kwargs)
+        self.user.refresh_platform_flags()
+        return result
+
+    def delete(self, *args, **kwargs):
+        user = self.user
+        result = super().delete(*args, **kwargs)
+        user.refresh_platform_flags()
+        return result
+
+
+class PasswordResetOTP(models.Model):
+    """
+    One-time password flow storage for password reset.
+    OTP code is hashed, never stored in plaintext.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="password_reset_otps",
+    )
+    otp_code_hash = models.CharField(max_length=128)
+    verification_token = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "accounts_password_reset_otp"
+        indexes = [
+            models.Index(fields=["user"], name="acc_pwd_reset_user_idx"),
+            models.Index(fields=["expires_at"], name="acc_pwd_reset_exp_idx"),
+            models.Index(fields=["consumed_at"], name="acc_pwd_reset_used_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.matricule} password-reset OTP @ {self.created_at.isoformat()}"
+
+    @property
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+
+    @property
+    def is_consumed(self):
+        return self.consumed_at is not None
+
+    def set_otp(self, raw_otp: str):
+        self.otp_code_hash = make_password(raw_otp)
+
+    def check_otp(self, raw_otp: str) -> bool:
+        return check_password(raw_otp, self.otp_code_hash)

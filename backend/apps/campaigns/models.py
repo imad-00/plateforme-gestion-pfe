@@ -4,14 +4,17 @@ from django.db import models
 
 class CampaignPhase(models.Model):
     class PhaseType(models.TextChoices):
-        ACCOUNT_SETUP = "ACCOUNT_SETUP", "Account Setup"
-        SUBJECT_SUBMISSION_AND_REVIEW = "SUBJECT_SUBMISSION_AND_REVIEW", "Subject Submission and Review"
-        FIRST_WISH_SELECTION = "FIRST_WISH_SELECTION", "First Wish Selection"
+        CAMPAIGN_SETUP = "CAMPAIGN_SETUP", "Campaign Setup"
+        SUBJECT_MANAGEMENT = "SUBJECT_MANAGEMENT", "Subject Management"
+        TEAM_FORMATION = "TEAM_FORMATION", "Team Formation"
+        WISHLIST_1 = "WISHLIST_1", "Wishlist 1"
+        ASSIGNMENT_REVIEW_1 = "ASSIGNMENT_REVIEW_1", "Assignment Review 1"
         RESULTS_AND_APPEALS = "RESULTS_AND_APPEALS", "Results and Appeals"
-        SECOND_WISH_SELECTION = "SECOND_WISH_SELECTION", "Second Wish Selection"
-        FINAL_RESULTS_AND_ASSIGNMENT = "FINAL_RESULTS_AND_ASSIGNMENT", "Final Results and Assignment"
-        WORK_PERIOD = "WORK_PERIOD", "Work Period"
-        DEFENSE_PERIOD = "DEFENSE_PERIOD", "Defense Period"
+        WISHLIST_2 = "WISHLIST_2", "Wishlist 2"
+        ASSIGNMENT_REVIEW_2 = "ASSIGNMENT_REVIEW_2", "Assignment Review 2"
+        WORK_AND_SUPERVISION = "WORK_AND_SUPERVISION", "Work and Supervision"
+        DEFENSE_WINDOW = "DEFENSE_WINDOW", "Defense Window"
+        ARCHIVE = "ARCHIVE", "Archive"
 
     id = models.BigAutoField(primary_key=True)
     academic_year = models.ForeignKey(
@@ -50,8 +53,8 @@ class CampaignPhase(models.Model):
         return f"{self.academic_year.year} - {self.phase_type}"
 
     def clean(self):
-        if self.academic_year.is_archived:
-            raise ValidationError({"academic_year": "Cannot attach phase to archived academic year."})
+        if self.academic_year.status != "ACTIVE":
+            raise ValidationError({"academic_year": "Campaign phases can be modified only for ACTIVE academic years."})
 
         if self.end_at is not None and self.end_at < self.start_at:
             raise ValidationError({"end_at": "end_at must be greater than or equal to start_at."})

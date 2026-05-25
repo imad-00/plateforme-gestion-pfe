@@ -54,7 +54,7 @@ class PlatformAccessGrantCreateSerializer(serializers.ModelSerializer):
                 "Platform access can be granted only to TEACHER or ADMINISTRATIVE_STAFF users."
             )
         if value.account_status != User.AccountStatus.ACTIVE:
-            raise serializers.ValidationError("Only active, non-archived users can receive platform access.")
+            raise serializers.ValidationError("Only ACTIVE users can receive platform access.")
         return value
 
     @transaction.atomic

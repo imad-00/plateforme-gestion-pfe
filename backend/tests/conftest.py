@@ -1,6 +1,10 @@
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 
 from apps.accounts.models import PlatformAccessGrant, StudentProfile, TeacherProfile, User
+from apps.campaigns.models import CampaignPhase
 
 
 @pytest.fixture
@@ -10,59 +14,40 @@ def user_factory(db):
         matricule,
         email,
         password="Testpass123!",
-        global_role=User.GlobalRole.STUDENT,
-        is_active=True,
-        is_archived=False,
-        business_identity=None,
-        account_status=None,
+        business_identity=User.BusinessIdentity.STUDENT,
+        account_status=User.AccountStatus.ACTIVE,
         is_staff=False,
         is_superuser=False,
         first_name="",
         last_name="",
         with_platform_access=False,
+        platform_access_level=PlatformAccessGrant.AccessLevel.ADMIN,
     ):
-        if business_identity is None:
-            business_identity = {
-                User.GlobalRole.STUDENT: User.BusinessIdentity.STUDENT,
-                User.GlobalRole.TEACHER: User.BusinessIdentity.TEACHER,
-                User.GlobalRole.ADMIN: User.BusinessIdentity.ADMINISTRATIVE_STAFF,
-                User.GlobalRole.SUPER_ADMIN: User.BusinessIdentity.ADMINISTRATIVE_STAFF,
-            }.get(global_role, User.BusinessIdentity.STUDENT)
-
-        if account_status is None:
-            account_status = (
-                User.AccountStatus.ARCHIVED
-                if is_archived
-                else (User.AccountStatus.ACTIVE if is_active else User.AccountStatus.SUSPENDED)
-            )
-
         user = User.objects.create_user(
             email=email,
             matricule=matricule,
             password=password,
-            global_role=global_role,
             business_identity=business_identity,
             account_status=account_status,
-            is_active=is_active,
-            is_archived=is_archived,
             is_staff=is_staff,
             is_superuser=is_superuser,
             first_name=first_name,
             last_name=last_name,
         )
 
-        if global_role == User.GlobalRole.STUDENT:
+        if business_identity == User.BusinessIdentity.STUDENT:
             StudentProfile.objects.create(user=user)
-        if global_role == User.GlobalRole.TEACHER:
+        if business_identity == User.BusinessIdentity.TEACHER:
             TeacherProfile.objects.create(user=user)
 
         if with_platform_access:
-            level = (
-                PlatformAccessGrant.AccessLevel.SUPER_ADMIN
-                if global_role == User.GlobalRole.SUPER_ADMIN
-                else PlatformAccessGrant.AccessLevel.ADMIN
+            PlatformAccessGrant.objects.create(
+                user=user,
+                access_level=platform_access_level,
             )
-            PlatformAccessGrant.objects.create(user=user, access_level=level)
+            user.is_staff = True
+            user.is_superuser = platform_access_level == PlatformAccessGrant.AccessLevel.SUPER_ADMIN
+            user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
 
         return user
 
@@ -74,7 +59,7 @@ def student_user(user_factory):
     return user_factory(
         matricule="STU001",
         email="student@example.com",
-        global_role=User.GlobalRole.STUDENT,
+        business_identity=User.BusinessIdentity.STUDENT,
         first_name="Student",
         last_name="One",
     )
@@ -85,7 +70,7 @@ def teacher_user(user_factory):
     return user_factory(
         matricule="TEA001",
         email="teacher@example.com",
-        global_role=User.GlobalRole.TEACHER,
+        business_identity=User.BusinessIdentity.TEACHER,
         first_name="Teacher",
         last_name="One",
     )
@@ -96,12 +81,12 @@ def admin_user(user_factory):
     return user_factory(
         matricule="ADM001",
         email="admin@example.com",
-        global_role=User.GlobalRole.ADMIN,
         business_identity=User.BusinessIdentity.ADMINISTRATIVE_STAFF,
         is_staff=True,
         first_name="Admin",
         last_name="One",
         with_platform_access=True,
+        platform_access_level=PlatformAccessGrant.AccessLevel.ADMIN,
     )
 
 
@@ -110,11 +95,26 @@ def super_admin_user(user_factory):
     return user_factory(
         matricule="SADM001",
         email="superadmin@example.com",
-        global_role=User.GlobalRole.SUPER_ADMIN,
         business_identity=User.BusinessIdentity.ADMINISTRATIVE_STAFF,
         is_staff=True,
         is_superuser=True,
         first_name="Super",
         last_name="Admin",
         with_platform_access=True,
+        platform_access_level=PlatformAccessGrant.AccessLevel.SUPER_ADMIN,
     )
+
+
+@pytest.fixture
+def open_campaign_phase(db):
+    def create_phase(academic_year, phase_type, *, display_order=1, days_before=1, days_after=1):
+        now = timezone.now()
+        return CampaignPhase.objects.create(
+            academic_year=academic_year,
+            phase_type=phase_type,
+            start_at=now - timedelta(days=days_before),
+            end_at=now + timedelta(days=days_after) if days_after is not None else None,
+            display_order=display_order,
+        )
+
+    return create_phase

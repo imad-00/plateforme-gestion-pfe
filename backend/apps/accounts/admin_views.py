@@ -11,6 +11,8 @@ from apps.accounts.admin_serializers import (
 )
 from apps.accounts.models import User
 from apps.accounts.permissions import IsAdminOrSuperAdmin, IsSuperAdmin, get_platform_levels
+from apps.audit.models import AdminActionLog
+from apps.audit.services import AdminActionLogService
 from config.pagination import DefaultPageNumberPagination
 
 
@@ -39,6 +41,13 @@ class AdminUserListCreateView(APIView):
         serializer = AdminUserCreateUpdateSerializer(data=request.data, context={"actor": request.user})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        AdminActionLogService.log(
+            request.user,
+            AdminActionLog.ActionType.USER_CREATED,
+            target=user,
+            metadata={"business_identity": user.business_identity},
+            request=request,
+        )
         return Response(AdminUserListSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -62,6 +71,13 @@ class AdminUserDetailUpdateView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        AdminActionLogService.log(
+            request.user,
+            AdminActionLog.ActionType.USER_UPDATED,
+            target=user,
+            metadata={"updated_fields": sorted(request.data.keys())},
+            request=request,
+        )
         return Response(AdminUserListSerializer(user).data)
 
 
@@ -88,7 +104,14 @@ class AdminUserArchiveView(APIView):
             )
 
         user.account_status = User.AccountStatus.ARCHIVED
-        user.save(update_fields=["account_status", "is_active", "is_archived", "updated_at"])
+        user.save(update_fields=["account_status", "updated_at"])
+        AdminActionLogService.log(
+            actor,
+            AdminActionLog.ActionType.USER_ARCHIVED,
+            target=user,
+            metadata={"business_identity": user.business_identity},
+            request=request,
+        )
         return Response(AdminUserListSerializer(user).data, status=status.HTTP_200_OK)
 
 
@@ -111,4 +134,11 @@ class SuperAdminAdminListCreateView(APIView):
         serializer = SuperAdminCreateAdminSerializer(data=request.data, context={"actor": request.user})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        AdminActionLogService.log(
+            request.user,
+            AdminActionLog.ActionType.USER_CREATED,
+            target=user,
+            metadata={"business_identity": user.business_identity, "platform_access_level": request.data.get("access_level")},
+            request=request,
+        )
         return Response(AdminUserListSerializer(user).data, status=status.HTTP_201_CREATED)

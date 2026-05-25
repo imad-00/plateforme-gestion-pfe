@@ -11,6 +11,8 @@ from apps.accounts.platform_serializers import (
     PlatformAccessGrantReadSerializer,
     PlatformAccessGrantRevokeSerializer,
 )
+from apps.audit.models import AdminActionLog
+from apps.audit.services import AdminActionLogService
 from config.pagination import DefaultPageNumberPagination
 
 
@@ -54,6 +56,13 @@ class SuperAdminPlatformAccessGrantCreateView(APIView):
         serializer = PlatformAccessGrantCreateSerializer(data=request.data, context={"actor": request.user})
         serializer.is_valid(raise_exception=True)
         grant = serializer.save()
+        AdminActionLogService.log(
+            request.user,
+            AdminActionLog.ActionType.PLATFORM_GRANT_CREATED,
+            target=grant,
+            metadata={"user_id": grant.user_id, "access_level": grant.access_level},
+            request=request,
+        )
         return Response(PlatformAccessGrantReadSerializer(grant).data, status=status.HTTP_201_CREATED)
 
 
@@ -70,4 +79,11 @@ class SuperAdminPlatformAccessGrantRevokeView(APIView):
         serializer = PlatformAccessGrantRevokeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         grant = serializer.revoke(grant)
+        AdminActionLogService.log(
+            request.user,
+            AdminActionLog.ActionType.PLATFORM_GRANT_REVOKED,
+            target=grant,
+            metadata={"user_id": grant.user_id, "access_level": grant.access_level},
+            request=request,
+        )
         return Response(PlatformAccessGrantReadSerializer(grant).data, status=status.HTTP_200_OK)

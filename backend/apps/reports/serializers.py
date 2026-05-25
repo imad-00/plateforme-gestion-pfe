@@ -1,0 +1,70 @@
+from rest_framework import serializers
+
+
+class DefenseReportRowSerializer(serializers.Serializer):
+    defense_id = serializers.CharField(allow_blank=True)
+    defense_status = serializers.CharField(allow_blank=True)
+    team_code = serializers.CharField(allow_blank=True)
+    team_name = serializers.CharField(allow_blank=True)
+    subject_title = serializers.CharField(allow_blank=True)
+    subject_type = serializers.CharField(allow_blank=True)
+    supervisors = serializers.CharField(allow_blank=True)
+    jury_president = serializers.CharField(allow_blank=True)
+    jury_examiners = serializers.CharField(allow_blank=True)
+    jury_guests = serializers.CharField(allow_blank=True)
+    scheduled_at = serializers.CharField(allow_blank=True)
+    location = serializers.CharField(allow_blank=True)
+    final_grade = serializers.CharField(allow_blank=True)
+    deliberation = serializers.CharField(allow_blank=True)
+    pv_uploaded_at = serializers.CharField(allow_blank=True)
+    pv_uploaded_by = serializers.CharField(allow_blank=True)
+    pv_file_url_or_name = serializers.CharField(allow_blank=True)
+
+
+class TeamAssignmentReportRowSerializer(serializers.Serializer):
+    team_code = serializers.CharField(allow_blank=True)
+    team_name = serializers.CharField(allow_blank=True)
+    team_status = serializers.CharField(allow_blank=True)
+    selection_round = serializers.CharField(allow_blank=True)
+    annual_average = serializers.CharField(allow_blank=True)
+    students = serializers.CharField(allow_blank=True)
+    leader = serializers.CharField(allow_blank=True)
+    supervisors = serializers.CharField(allow_blank=True)
+    subject_title = serializers.CharField(allow_blank=True)
+    subject_type = serializers.CharField(allow_blank=True)
+    subject_status = serializers.CharField(allow_blank=True)
+    subject_proposed_by = serializers.CharField(allow_blank=True)
+    assignment_status = serializers.CharField(allow_blank=True)
+
+
+class StudentResultReportRowSerializer(serializers.Serializer):
+    student_matricule = serializers.CharField(allow_blank=True)
+    student_full_name = serializers.CharField(allow_blank=True)
+    student_email = serializers.CharField(allow_blank=True)
+    account_status = serializers.CharField(allow_blank=True)
+    academic_year = serializers.CharField(allow_blank=True)
+    team_code = serializers.CharField(allow_blank=True)
+    team_name = serializers.CharField(allow_blank=True)
+    team_status = serializers.CharField(allow_blank=True)
+    team_role = serializers.CharField(allow_blank=True)
+    subject_title = serializers.CharField(allow_blank=True)
+    subject_type = serializers.CharField(allow_blank=True)
+    defense_status = serializers.CharField(allow_blank=True)
+    final_grade = serializers.CharField(allow_blank=True)
+    pv_uploaded_at = serializers.CharField(allow_blank=True)
+    result_status = serializers.CharField(allow_blank=True)
+
+
+class JuryPlanningReportRowSerializer(serializers.Serializer):
+    scheduled_at = serializers.CharField(allow_blank=True)
+    location = serializers.CharField(allow_blank=True)
+    defense_status = serializers.CharField(allow_blank=True)
+    team_code = serializers.CharField(allow_blank=True)
+    team_name = serializers.CharField(allow_blank=True)
+    subject_title = serializers.CharField(allow_blank=True)
+    president = serializers.CharField(allow_blank=True)
+    examiners = serializers.CharField(allow_blank=True)
+    guests = serializers.CharField(allow_blank=True)
+    supervisors = serializers.CharField(allow_blank=True)
+    final_grade = serializers.CharField(allow_blank=True)
+    pv_uploaded = serializers.CharField(allow_blank=True)

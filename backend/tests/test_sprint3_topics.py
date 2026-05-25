@@ -4,6 +4,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 from apps.academics.models import AcademicYear
+from apps.campaigns.models import CampaignPhase
 from apps.topics.models import Subject
 
 
@@ -15,8 +16,10 @@ def auth_client(user):
 
 
 @pytest.fixture
-def active_year(db):
-    return AcademicYear.objects.create(year="2025/2026", is_active=True, is_archived=False)
+def active_year(db, open_campaign_phase):
+    year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
+    open_campaign_phase(year, CampaignPhase.PhaseType.SUBJECT_MANAGEMENT)
+    return year
 
 
 @pytest.mark.django_db
@@ -45,7 +48,7 @@ def test_teacher_creates_subject_draft(teacher_user, active_year):
 
 @pytest.mark.django_db
 def test_teacher_cannot_create_subject_in_inactive_year(teacher_user, active_year):
-    inactive_year = AcademicYear.objects.create(year="2030/2031", is_active=False, is_archived=False)
+    inactive_year = AcademicYear.objects.create(year="2030/2031", status=AcademicYear.Status.CLOSED)
     client = auth_client(teacher_user)
 
     response = client.post(
@@ -86,7 +89,7 @@ def test_teacher_sees_only_own_subjects_in_personal_list(teacher_user, user_fact
     other_teacher = user_factory(
         matricule="TEA777",
         email="other-teacher@example.com",
-        global_role=User.GlobalRole.TEACHER,
+        business_identity=User.BusinessIdentity.TEACHER,
     )
 
     own_subject = Subject.objects.create(
@@ -118,7 +121,7 @@ def test_teacher_cannot_edit_another_teacher_subject(teacher_user, user_factory,
     other_teacher = user_factory(
         matricule="TEA778",
         email="teacher-b@example.com",
-        global_role=User.GlobalRole.TEACHER,
+        business_identity=User.BusinessIdentity.TEACHER,
     )
     subject = Subject.objects.create(
         title="Other Teacher Subject",
@@ -340,10 +343,8 @@ def test_public_catalog_shows_only_approved_subjects(student_user, teacher_user,
 
 @pytest.mark.django_db
 def test_public_catalog_returns_empty_when_no_active_year(student_user, teacher_user):
-    AcademicYear.objects.create(year="2024/2025", is_active=False, is_archived=False)
-    archived_year = AcademicYear.objects.create(year="2023/2024", is_active=False, is_archived=False)
-    archived_year.is_archived = True
-    archived_year.save(update_fields=["is_archived", "updated_at"])
+    AcademicYear.objects.create(year="2024/2025", status=AcademicYear.Status.CLOSED)
+    AcademicYear.objects.create(year="2023/2024", status=AcademicYear.Status.ARCHIVED)
 
     client = auth_client(student_user)
     response = client.get("/api/subjects/")
@@ -359,7 +360,6 @@ def test_public_catalog_excludes_archived_subjects(student_user, teacher_user, a
         description="desc",
         subject_type=Subject.SubjectType.APPLIED_PROJECT,
         status=Subject.Status.ARCHIVED,
-        is_archived=True,
         proposed_by=teacher_user,
         academic_year=active_year,
     )
@@ -373,16 +373,14 @@ def test_public_catalog_excludes_archived_subjects(student_user, teacher_user, a
 
 @pytest.mark.django_db
 def test_public_catalog_excludes_non_active_or_archived_academic_year(student_user, teacher_user):
-    active_year = AcademicYear.objects.create(year="2025/2026", is_active=True, is_archived=False)
+    active_year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
     inactive_year = AcademicYear.objects.create(
         year="2024/2025",
-        is_active=False,
-        is_archived=False,
+        status=AcademicYear.Status.CLOSED,
     )
     soon_archived_year = AcademicYear.objects.create(
         year="2023/2024",
-        is_active=False,
-        is_archived=False,
+        status=AcademicYear.Status.CLOSED,
     )
 
     visible = Subject.objects.create(
@@ -409,8 +407,8 @@ def test_public_catalog_excludes_non_active_or_archived_academic_year(student_us
         proposed_by=teacher_user,
         academic_year=soon_archived_year,
     )
-    soon_archived_year.is_archived = True
-    soon_archived_year.save(update_fields=["is_archived", "updated_at"])
+    soon_archived_year.status = AcademicYear.Status.ARCHIVED
+    soon_archived_year.save(update_fields=["status", "updated_at"])
 
     client = auth_client(student_user)
     response = client.get("/api/subjects/")
@@ -491,5 +489,4 @@ def test_archive_endpoint_works(admin_user, teacher_user, active_year):
 
     assert response.status_code == 200
     subject.refresh_from_db()
-    assert subject.is_archived is True
     assert subject.status == Subject.Status.ARCHIVED

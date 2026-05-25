@@ -28,14 +28,6 @@ class IsAuthenticatedAndActiveAccount(BasePermission):
     def has_permission(self, request, view):
         return _is_active_account(request.user)
 
-
-class IsAuthenticatedAndNotArchived(IsAuthenticatedAndActiveAccount):
-    """
-    Backward-compatible alias used by existing endpoints/settings.
-    """
-    pass
-
-
 class HasBusinessIdentity(BasePermission):
     allowed_identities = set()
 
