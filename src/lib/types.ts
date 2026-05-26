@@ -304,6 +304,20 @@ export interface WishlistItem {
   rank: number
 }
 
+// Slim shape returned by GET /api/admin/wishlists/ list endpoint — no items array.
+export interface WishlistListItem {
+  wishlist_id: string // uuid
+  team: TeamSummary
+  selection_round: SelectionRound
+  status: WishlistStatus
+  submitted_by: number | null // integer user ID
+  submitted_at: string | null
+  item_count: string // DRF serialises as string
+  created_at: string
+  updated_at: string
+}
+
+// Full shape returned by GET /api/admin/wishlists/<id>/ and GET /api/wishlists/me/.
 export interface Wishlist {
   wishlist_id: string // uuid
   team: TeamSummary
@@ -343,11 +357,19 @@ export interface Assignment {
   subject_title: string | null
 }
 
+// Actual response from POST /api/admin/assignments/merit/ and /random/.
 export interface BulkAssignmentResult {
-  selection_round: SelectionRound
-  total_teams: number
-  assigned_count: number
-  unassigned_teams: string[] // array of team_codes
+  mode: string
+  selection_round: string
+  assigned_teams: Array<{ team_code: string; subject_id: number; annual_average?: string }>
+  unassigned_teams: Array<{ team_code: string; reason: string }>
+  skipped_teams: Array<{ team_code: string; reason: string }>
+}
+
+// Response from POST /api/admin/assignments/manual/.
+export interface ManualAssignmentResult {
+  team_code: string
+  subject_id: number
 }
 
 // ─── Deliverables ─────────────────────────────────────────────────────────────

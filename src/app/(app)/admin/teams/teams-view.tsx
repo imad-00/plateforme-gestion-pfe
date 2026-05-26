@@ -19,7 +19,7 @@ import type {
   Team,
   TeamListItem,
   User,
-  Wishlist,
+  WishlistListItem,
 } from '@/lib/types'
 import { DataTable, type Column } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -121,11 +121,11 @@ function TeamDetailDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const wishlistsApi = useApi<PaginatedResponse<Wishlist>>(
+  const wishlistsApi = useApi<PaginatedResponse<WishlistListItem>>(
     () =>
       open && teamCode
         ? api.get(`/api/admin/wishlists/?team_code=${teamCode}&page_size=5`)
-        : Promise.resolve<PaginatedResponse<Wishlist>>({
+        : Promise.resolve<PaginatedResponse<WishlistListItem>>({
             count: 0, next: null, previous: null, results: [],
           }),
     [open, teamCode],
