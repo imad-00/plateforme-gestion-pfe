@@ -205,6 +205,20 @@ export interface Subject {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
+export interface TeamListItem {
+  team_code: string
+  name: string
+  academic_year: number
+  status: TeamStatus
+  selection_round: SelectionRound
+  annual_average: string | null
+  assignment_validated_at: string | null
+  assignment_validated_by: number | null
+  created_at: string
+  updated_at: string
+  dissolved_at: string | null
+}
+
 export interface Participation {
   participation_id: string // uuid
   user: User

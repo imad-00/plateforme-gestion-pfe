@@ -57,10 +57,14 @@ export function DataTable<T>({
   onPageSizeChange,
   emptyState,
 }: DataTableProps<T>) {
+  // Defensive guard: callers must pass T[] but a runtime undefined can arrive
+  // during the brief window before useApi resolves. Default to [] so the table
+  // never crashes before data arrives.
+  const rows: T[] = data ?? []
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, total)
-  const isEmpty = !isLoading && data.length === 0
+  const isEmpty = !isLoading && rows.length === 0
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
@@ -97,7 +101,7 @@ export function DataTable<T>({
               </TableCell>
             </TableRow>
           ) : (
-            data.map(row => (
+            rows.map(row => (
               <TableRow key={String(row[keyField])}>
                 {columns.map(col => (
                   <TableCell key={col.key} className={col.className}>
