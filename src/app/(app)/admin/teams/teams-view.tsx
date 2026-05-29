@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   AlertCircle,
+  Crown,
   Loader2,
   MoreHorizontal,
   Search,
@@ -543,16 +544,235 @@ function ManageSupervisorsDialog({
   )
 }
 
+// ─── Manage members dialog ────────────────────────────────────────────────────
+// Lets admin promote a non-leader to leader (transfer-leadership) and remove
+// any non-leader member. To remove the current leader, admin must first promote
+// someone else — keeps the destructive flow explicit and avoids ambiguity about
+// which call to make to the backend.
+
+function ManageMembersDialog({
+  teamCode,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  teamCode: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
+}) {
+  const [team, setTeam] = useState<Team | null>(null)
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [teamError, setTeamError] = useState<string | null>(null)
+  const [busyParticipationId, setBusyParticipationId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState<{
+    studentId: number
+    label: string
+  } | null>(null)
+  const [removeLoading, setRemoveLoading] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
+  async function loadTeam() {
+    if (!teamCode) return
+    setTeamLoading(true)
+    setTeamError(null)
+    try {
+      const t = await api.get<Team>(`/api/admin/teams/${teamCode}/`)
+      setTeam(t)
+    } catch (err) {
+      setTeamError(extractMessage(err))
+    } finally {
+      setTeamLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open && teamCode) {
+      loadTeam()
+      setActionError(null)
+    } else {
+      setTeam(null)
+      setConfirmRemove(null)
+      setRemoveError(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, teamCode])
+
+  async function handlePromote(participationId: string, userId: number) {
+    if (!teamCode) return
+    setBusyParticipationId(participationId)
+    setActionError(null)
+    try {
+      await api.post(`/api/admin/teams/${teamCode}/transfer-leadership/`, {
+        new_leader_id: userId,
+      })
+      await loadTeam()
+      onSuccess()
+    } catch (err) {
+      setActionError(extractMessage(err))
+    } finally {
+      setBusyParticipationId(null)
+    }
+  }
+
+  async function handleRemove() {
+    if (!teamCode || !confirmRemove) return
+    setRemoveLoading(true)
+    setRemoveError(null)
+    try {
+      await api.post(`/api/admin/teams/${teamCode}/remove-member/`, {
+        student_id: confirmRemove.studentId,
+        dissolve_if_needed: false,
+      })
+      setConfirmRemove(null)
+      await loadTeam()
+      onSuccess()
+    } catch (err) {
+      setRemoveError(extractMessage(err))
+    } finally {
+      setRemoveLoading(false)
+    }
+  }
+
+  const members = team?.active_members ?? []
+  const leaderParticipationId = team?.active_leader?.participation_id ?? null
+  const anyBusy = busyParticipationId !== null
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={anyBusy ? undefined : onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Manage Members
+              {teamCode && (
+                <span className="ml-2 font-mono text-sm font-normal text-muted-foreground">
+                  {teamCode}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {teamLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-lg" />
+            </div>
+          ) : teamError ? (
+            <InlineError message={teamError} />
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                To remove the current leader, promote another member first.
+              </p>
+
+              {members.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active members.</p>
+              ) : (
+                <div className="divide-y divide-border rounded-lg border border-border">
+                  {members.map(p => {
+                    const isLeader = p.participation_id === leaderParticipationId
+                    const isBusy = busyParticipationId === p.participation_id
+                    return (
+                      <div
+                        key={p.participation_id}
+                        className="flex items-center justify-between gap-2 px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {p.user.first_name} {p.user.last_name}
+                            {isLeader && (
+                              <span className="ml-1.5 text-xs font-normal text-primary">
+                                Leader
+                              </span>
+                            )}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {p.user.matricule}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          {!isLeader && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={anyBusy}
+                              onClick={() => handlePromote(p.participation_id, p.user.id)}
+                              title="Promote to team leader"
+                            >
+                              {isBusy ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Crown className="size-4" />
+                              )}
+                              Make Leader
+                            </Button>
+                          )}
+                          {!isLeader && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-status-error-fg hover:text-status-error-fg"
+                              disabled={anyBusy}
+                              onClick={() => {
+                                setRemoveError(null)
+                                setConfirmRemove({
+                                  studentId: p.user.id,
+                                  label: `${p.user.first_name} ${p.user.last_name} (${p.user.matricule})`,
+                                })
+                              }}
+                            >
+                              <UserMinus className="size-4" />
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {actionError && <InlineError message={actionError} />}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={anyBusy}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        onOpenChange={open => { if (!open) { setConfirmRemove(null); setRemoveError(null) } }}
+        title="Remove Member"
+        description={`Remove ${confirmRemove?.label ?? ''} from this team? The team will keep existing — use Dissolve Team if you want to disband the whole team.`}
+        confirmLabel="Remove"
+        destructive
+        isLoading={removeLoading}
+        error={removeError}
+        onConfirm={handleRemove}
+      />
+    </>
+  )
+}
+
 // ─── Row actions ──────────────────────────────────────────────────────────────
 
 function TeamRowActions({
   team,
   onViewDetails,
+  onManageMembers,
   onManageSupervisors,
   onDissolve,
 }: {
   team: TeamListItem
   onViewDetails: (t: TeamListItem) => void
+  onManageMembers: (t: TeamListItem) => void
   onManageSupervisors: (t: TeamListItem) => void
   onDissolve: (t: TeamListItem) => void
 }) {
@@ -568,6 +788,9 @@ function TeamRowActions({
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => onViewDetails(team)}>
           View Details
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onManageMembers(team)}>
+          Manage Members
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onManageSupervisors(team)}>
           Manage Supervisors
@@ -612,6 +835,7 @@ export function AdminTeamsView() {
 
   // ── Dialog state ───────────────────────────────────────────────────────────
   const [detailTeamCode, setDetailTeamCode] = useState<string | null>(null)
+  const [membersTeamCode, setMembersTeamCode] = useState<string | null>(null)
   const [supervisorTeamCode, setSupervisorTeamCode] = useState<string | null>(null)
   const [dissolveTeam, setDissolveTeam] = useState<TeamListItem | null>(null)
   const [dissolveLoading, setDissolveLoading] = useState(false)
@@ -700,6 +924,7 @@ export function AdminTeamsView() {
         <TeamRowActions
           team={t}
           onViewDetails={item => setDetailTeamCode(item.team_code)}
+          onManageMembers={item => setMembersTeamCode(item.team_code)}
           onManageSupervisors={item => setSupervisorTeamCode(item.team_code)}
           onDissolve={item => { setDissolveError(null); setDissolveTeam(item) }}
         />
@@ -787,6 +1012,13 @@ export function AdminTeamsView() {
         teamCode={detailTeamCode}
         open={detailTeamCode !== null}
         onOpenChange={open => { if (!open) setDetailTeamCode(null) }}
+      />
+
+      <ManageMembersDialog
+        teamCode={membersTeamCode}
+        open={membersTeamCode !== null}
+        onOpenChange={open => { if (!open) setMembersTeamCode(null) }}
+        onSuccess={teamsApi.refetch}
       />
 
       <ManageSupervisorsDialog

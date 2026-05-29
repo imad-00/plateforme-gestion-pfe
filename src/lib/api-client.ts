@@ -4,12 +4,27 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 // ─── Error class ──────────────────────────────────────────────────────────────
 
+// Walks the API error response for the first string value. DRF returns
+// `{ detail: "..." }` for permission/auth errors but `{ field_name: ["..."] }`
+// or `{ field_name: "..." }` for validation errors — both forms now produce
+// a usable message instead of the generic "Request failed with status N".
+function firstStringValue(data: ApiError): string | undefined {
+  for (const v of Object.values(data)) {
+    if (typeof v === 'string' && v.trim()) return v
+    if (Array.isArray(v)) {
+      const s = v.find(x => typeof x === 'string' && x.trim())
+      if (s) return s as string
+    }
+  }
+  return undefined
+}
+
 export class ApiClientError extends Error {
   constructor(
     public readonly status: number,
     public readonly data: ApiError,
   ) {
-    super(data.detail ?? `Request failed with status ${status}`)
+    super(data.detail ?? firstStringValue(data) ?? `Request failed with status ${status}`)
     this.name = 'ApiClientError'
   }
 }

@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context'
 import type { User } from '@/lib/types'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { NotificationBell } from '@/components/layout/notification-bell'
 
 function getInitials(user: User): string {
   const from = [user.first_name, user.last_name]
@@ -32,6 +33,9 @@ export function Topbar() {
   return (
     <header className="flex h-14 shrink-0 items-center justify-end border-b border-border bg-card px-6">
       <div className="flex items-center gap-3">
+        {/* Notifications */}
+        <NotificationBell />
+
         {/* Avatar */}
         <Avatar size="sm">
           <AvatarFallback className="bg-primary/10 text-xs text-primary">

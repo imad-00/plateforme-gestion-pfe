@@ -5,6 +5,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardCheck,
+  Gavel,
   Info,
   Loader2,
   ListChecks,
@@ -16,6 +17,7 @@ import { useAuth } from '@/lib/auth-context'
 import { api, ApiClientError } from '@/lib/api-client'
 import { useApi } from '@/hooks/use-api'
 import type {
+  Appeal,
   BulkAssignmentResult,
   ManualAssignmentResult,
   PaginatedResponse,
@@ -38,6 +40,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -64,6 +67,13 @@ const ROUND_FILTER_OPTIONS = [
   { value: 'all', label: 'All rounds' },
   { value: 'FIRST', label: 'Round 1' },
   { value: 'SECOND', label: 'Round 2' },
+] as const
+
+const APPEAL_STATUS_OPTIONS = [
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'all', label: 'All statuses' },
+  { value: 'ACCEPTED', label: 'Accepted' },
+  { value: 'REJECTED', label: 'Rejected' },
 ] as const
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -392,6 +402,103 @@ function ManualResultCard({ result }: { result: ManualAssignmentResult }) {
   )
 }
 
+// ─── Reject Appeal Dialog ─────────────────────────────────────────────────────
+// Optional admin_comment textarea. Accept uses ConfirmDialog directly; reject
+// gets its own dialog because the comment is part of the action payload.
+
+function RejectAppealDialog({
+  appeal,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  appeal: Appeal | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
+}) {
+  const [comment, setComment] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function handleClose() {
+    if (loading) return
+    onOpenChange(false)
+    setComment('')
+    setError(null)
+  }
+
+  async function handleReject() {
+    if (!appeal) return
+    setLoading(true)
+    setError(null)
+    try {
+      await api.post(`/api/admin/appeals/${appeal.appeal_id}/reject/`, {
+        admin_comment: comment.trim(),
+      })
+      onSuccess()
+      handleClose()
+    } catch (err) {
+      setError(extractMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <XCircle className="size-4 text-status-error-fg" />
+            Reject Appeal
+          </DialogTitle>
+          <DialogDescription>
+            {appeal && (
+              <>
+                Team <span className="font-mono font-semibold">{appeal.team.team_code}</span> —
+                their assigned subject will not change.
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="reject-comment">
+              Admin comment <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Textarea
+              id="reject-comment"
+              placeholder="Explain why the appeal was rejected…"
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              disabled={loading}
+              rows={4}
+            />
+          </div>
+
+          {error && <InlineError message={error} />}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleReject}
+            disabled={loading}
+            className="bg-status-error-fg text-white hover:bg-status-error-fg hover:brightness-90"
+          >
+            {loading && <Loader2 className="size-4 animate-spin" />}
+            Reject Appeal
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export function AdminAssignmentsView() {
@@ -453,6 +560,121 @@ export function AdminAssignmentsView() {
   )
 
   const wlTotal = wishlistsApi.data?.count ?? 0
+
+  // ── Appeals table ──────────────────────────────────────────────────────────
+  const [apPage, setApPage] = useState(1)
+  const [apPageSize, setApPageSize] = useState(10)
+  const [apStatus, setApStatus] = useState('PENDING')
+
+  function applyAppealFilter(setter: (v: string) => void) {
+    return (v: string) => { setter(v); setApPage(1) }
+  }
+
+  const appealsApi = useApi<PaginatedResponse<Appeal>>(
+    () => {
+      const params = new URLSearchParams({
+        page: String(apPage),
+        page_size: String(apPageSize),
+      })
+      if (apStatus !== 'all') params.set('status', apStatus)
+      return api.get(`/api/admin/appeals/?${params}`)
+    },
+    [apPage, apPageSize, apStatus],
+  )
+
+  const apTotal = appealsApi.data?.count ?? 0
+
+  // ── Appeal action state ────────────────────────────────────────────────────
+  const [acceptAppeal, setAcceptAppeal] = useState<Appeal | null>(null)
+  const [acceptLoading, setAcceptLoading] = useState(false)
+  const [acceptError, setAcceptError] = useState<string | null>(null)
+  const [rejectAppeal, setRejectAppeal] = useState<Appeal | null>(null)
+
+  async function handleAcceptAppeal() {
+    if (!acceptAppeal) return
+    setAcceptLoading(true)
+    setAcceptError(null)
+    try {
+      await api.post(`/api/admin/appeals/${acceptAppeal.appeal_id}/accept/`, {})
+      setAcceptAppeal(null)
+      appealsApi.refetch()
+    } catch (err) {
+      setAcceptError(extractMessage(err))
+    } finally {
+      setAcceptLoading(false)
+    }
+  }
+
+  const apColumns: Column<Appeal>[] = [
+    {
+      key: 'team',
+      header: 'Team',
+      render: a => (
+        <div>
+          <p className="font-mono text-xs font-semibold text-foreground">{a.team.team_code}</p>
+          <p className="text-xs text-muted-foreground">{a.team.name}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'reason',
+      header: 'Reason',
+      render: a => (
+        <p className="line-clamp-2 max-w-md text-sm text-foreground">{a.reason}</p>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      className: 'w-28',
+      render: a => <StatusBadge status={a.status} />,
+    },
+    {
+      key: 'submitted_at',
+      header: 'Submitted',
+      className: 'w-32',
+      render: a => (
+        <span className="text-sm text-muted-foreground">{formatDate(a.submitted_at)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      className: 'w-40',
+      render: a =>
+        a.status === 'PENDING' ? (
+          <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-status-success-fg hover:text-status-success-fg"
+              onClick={() => { setAcceptError(null); setAcceptAppeal(a) }}
+            >
+              <CheckCircle2 className="size-4" />
+              Accept
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-status-error-fg hover:text-status-error-fg"
+              onClick={() => setRejectAppeal(a)}
+            >
+              <XCircle className="size-4" />
+              Reject
+            </Button>
+          </div>
+        ) : a.admin_comment ? (
+          <span
+            className="block max-w-[12rem] truncate text-right text-xs text-muted-foreground"
+            title={a.admin_comment}
+          >
+            {a.admin_comment}
+          </span>
+        ) : (
+          <span className="text-right text-xs text-muted-foreground">—</span>
+        ),
+    },
+  ]
 
   const wlColumns: Column<WishlistListItem>[] = [
     {
@@ -662,23 +884,60 @@ export function AdminAssignmentsView() {
         )}
       </section>
 
-      {/* ── Appeals note ── */}
+      {/* ── Appeals ── */}
       <section className="mt-6">
-        <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-          <Info className="mt-0.5 size-4 shrink-0" />
-          <p>
-            <span className="font-medium text-foreground">Appeals</span> — there is no admin list
-            endpoint for appeals. To accept or reject an appeal, find the team on the{' '}
-            <a href="/admin/teams" className="text-primary underline-offset-2 hover:underline">
-              Teams page
-            </a>
-            {' '}and use the team detail panel, or call{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-              POST /api/admin/appeals/&#123;appeal_id&#125;/accept|reject/
-            </code>{' '}
-            directly via API.
-          </p>
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <Gavel className="size-4 text-primary" />
+          Appeals
+        </h2>
+
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <Select value={apStatus} onValueChange={applyAppealFilter(setApStatus)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {APPEAL_STATUS_OPTIONS.map(o => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {apTotal > 0 && !appealsApi.isLoading && (
+            <span className="ml-auto text-sm text-muted-foreground">
+              {apTotal} {apTotal === 1 ? 'appeal' : 'appeals'}
+            </span>
+          )}
         </div>
+
+        {appealsApi.error ? (
+          <InlineError message={appealsApi.error} />
+        ) : (
+          <DataTable<Appeal>
+            columns={apColumns}
+            data={appealsApi.data?.results ?? []}
+            keyField="appeal_id"
+            isLoading={appealsApi.isLoading}
+            page={apPage}
+            pageSize={apPageSize}
+            total={apTotal}
+            onPageChange={setApPage}
+            onPageSizeChange={size => { setApPageSize(size); setApPage(1) }}
+            emptyState={
+              <EmptyState
+                icon={Gavel}
+                title="No appeals found"
+                description={
+                  apStatus === 'PENDING'
+                    ? 'No pending appeals to review right now.'
+                    : 'Try adjusting the status filter.'
+                }
+              />
+            }
+          />
+        )}
       </section>
 
       {/* ── Dialogs ── */}
@@ -711,6 +970,28 @@ export function AdminAssignmentsView() {
         isLoading={validateLoading}
         error={validateError}
         onConfirm={handleValidate}
+      />
+
+      <ConfirmDialog
+        open={acceptAppeal !== null}
+        onOpenChange={open => { if (!open) { setAcceptAppeal(null); setAcceptError(null) } }}
+        title="Accept Appeal"
+        description={
+          acceptAppeal
+            ? `Accept the appeal from team ${acceptAppeal.team.team_code}? Their currently assigned subject will be released and the team will move to Round 2.`
+            : ''
+        }
+        confirmLabel="Accept Appeal"
+        isLoading={acceptLoading}
+        error={acceptError}
+        onConfirm={handleAcceptAppeal}
+      />
+
+      <RejectAppealDialog
+        appeal={rejectAppeal}
+        open={rejectAppeal !== null}
+        onOpenChange={open => { if (!open) setRejectAppeal(null) }}
+        onSuccess={appealsApi.refetch}
       />
     </>
   )

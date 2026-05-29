@@ -17,5 +17,7 @@ export const config = {
     '/student/:path*',
     '/teacher/:path*',
     '/admin/:path*',
+    '/notifications/:path*',
+    '/notifications',
   ],
 }

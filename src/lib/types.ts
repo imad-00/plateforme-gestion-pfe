@@ -401,6 +401,207 @@ export interface DeliverableFile {
   updated_at: string
 }
 
+// ─── Notifications (Sprint 11 backend) ───────────────────────────────────────
+
+export type NotificationType =
+  | 'TEAM_INVITATION_RECEIVED'
+  | 'TEAM_MEMBER_JOINED'
+  | 'TEAM_MEMBER_LEFT'
+  | 'TEAM_MEMBER_REMOVED'
+  | 'LEADERSHIP_TRANSFERRED'
+  | 'TEAM_LOCKED'
+  | 'SUBJECT_SUBMITTED'
+  | 'SUBJECT_APPROVED'
+  | 'SUBJECT_REJECTED'
+  | 'SUBJECT_RESUBMITTED'
+  | 'ASSIGNMENT_RESULT_AVAILABLE'
+  | 'APPEAL_SUBMITTED'
+  | 'APPEAL_ACCEPTED'
+  | 'APPEAL_REJECTED'
+  | 'DELIVERABLE_UPLOADED'
+  | 'DELIVERABLE_REVIEWED'
+  | 'DELIVERABLE_COMMENT_ADDED'
+  | 'DEFENSE_REQUESTED'
+  | 'DEFENSE_SUPERVISOR_ACCEPTED'
+  | 'DEFENSE_SUPERVISOR_DENIED'
+  | 'DEFENSE_READY_TO_SCHEDULE'
+  | 'DEFENSE_SCHEDULED'
+  | 'DEFENSE_RESCHEDULED'
+  | 'JURY_ASSIGNED'
+  | 'PV_UPLOADED'
+  | 'ACADEMIC_YEAR_CLOSED'
+  | 'ACADEMIC_YEAR_FORCE_CLOSED'
+  | 'ACADEMIC_YEAR_REOPENED'
+  | 'ACADEMIC_YEAR_ARCHIVED'
+
+export type NotificationImportance = 'NORMAL' | 'IMPORTANT'
+
+// GET /api/notifications/ returns a flat array (NOT a paginated envelope).
+// Supports ?unread=true&limit=N&offset=N for limit/offset paging.
+export interface Notification {
+  id: number
+  type: NotificationType
+  importance: NotificationImportance
+  title: string
+  message: string
+  link_url: string // empty string when no link
+  is_read: boolean
+  read_at: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface UnreadCountResponse {
+  unread_count: number
+}
+
+export interface MarkAllReadResponse {
+  updated: number
+}
+
+// ─── Dashboards (Sprint 12 backend) ───────────────────────────────────────────
+
+export interface DashboardAcademicYearSummary {
+  id: number
+  year: string
+  status: AcademicYearStatus
+}
+
+// Admin dashboard — GET /api/dashboard/admin/
+export interface AdminDashboard {
+  academic_year: DashboardAcademicYearSummary
+  teams: {
+    total: number
+    forming: number
+    locked: number
+    validated: number
+    dissolved: number
+  }
+  assignments: {
+    assigned: number
+    unassigned: number
+  }
+  defenses: {
+    total: number
+    requested: number
+    ready_to_schedule: number
+    scheduled: number
+    completed: number
+    cancelled: number
+  }
+  appeals: {
+    total: number
+    pending_or_submitted: number
+    accepted: number
+    rejected: number
+  }
+  deliverables: {
+    total_files: number
+    pending_review: number
+    accepted: number
+    needs_revision: number
+    rejected: number
+  }
+  subjects: {
+    total: number
+    draft: number
+    submitted: number
+    approved: number
+    assigned: number
+    rejected: number
+  }
+}
+
+// Teacher dashboard — GET /api/dashboard/teacher/
+export interface TeacherDashboardPendingDeliverable {
+  file_id: string
+  original_filename: string
+  team_code: string
+  uploaded_at: string
+  uploaded_by: string
+}
+
+export interface TeacherDashboardUpcomingDefense {
+  defense_id: string
+  team_code: string
+  team_name: string
+  scheduled_at: string
+  location: string
+  role_context: 'SUPERVISOR' | 'JURY' | 'SUPERVISOR,JURY'
+}
+
+export interface TeacherDashboard {
+  academic_year: DashboardAcademicYearSummary
+  supervision: {
+    supervised_teams_count: number
+    validated_supervised_teams_count: number
+  }
+  deliverables: {
+    pending_review_count: number
+    latest_pending_review: TeacherDashboardPendingDeliverable[]
+  }
+  defenses: {
+    upcoming_count: number
+    pending_requests_count: number
+    upcoming: TeacherDashboardUpcomingDefense[]
+  }
+}
+
+// Student dashboard — GET /api/dashboard/student/
+export interface StudentDashboardMember {
+  id: number
+  name: string
+  role: ParticipationRole
+}
+
+export interface StudentDashboardTeam {
+  team_code: string
+  name: string
+  status: TeamStatus
+  role: ParticipationRole
+  members: StudentDashboardMember[]
+  supervisors: StudentDashboardMember[]
+}
+
+export interface StudentDashboardSubject {
+  id: number
+  title: string
+  type: SubjectType
+  status: SubjectStatus
+}
+
+export interface StudentDashboardDefense {
+  id: string
+  status: string // backend uses its Defense.Status enum — keep loose to avoid coupling
+  scheduled_at: string
+  location: string
+  final_grade: string
+  pv_uploaded: boolean
+}
+
+export interface StudentDashboardDeliverable {
+  file_id: string
+  original_filename: string
+  uploaded_at: string
+  uploaded_by: string
+  review_status: ReviewStatus
+}
+
+export interface StudentDashboard {
+  academic_year: DashboardAcademicYearSummary
+  team: StudentDashboardTeam | null
+  subject: StudentDashboardSubject | null
+  defense: StudentDashboardDefense | null
+  deliverables: {
+    total_files: number
+    latest: StudentDashboardDeliverable[]
+  }
+  assignment: {
+    selection_round: SelectionRound | ''
+    assigned: boolean
+  }
+}
+
 // ─── Auth responses ───────────────────────────────────────────────────────────
 
 export interface LoginResponse {

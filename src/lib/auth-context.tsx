@@ -177,9 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const data = (await res.json()) as LoginResponse
 
-      storeAccessToken(data.access)
+      // Write to localStorage before updating React state so that AppLayout's
+      // guard can detect an in-flight session even if the state update hasn't
+      // committed yet when the new route renders.
       writeRefreshToken(data.refresh)
       document.cookie = `${SESSION_COOKIE}=1; path=/; SameSite=Lax`
+      storeAccessToken(data.access)
       setUser(data.user)
 
       return data.user

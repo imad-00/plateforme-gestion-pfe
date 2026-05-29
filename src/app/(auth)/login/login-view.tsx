@@ -18,12 +18,12 @@ interface LoginFormValues {
 }
 
 function defaultRoute(user: User): string {
-  if (user.platform_access_level) return '/admin/users'
+  if (user.platform_access_level) return '/admin'
   switch (user.business_identity) {
-    case 'STUDENT': return '/student/team'
-    case 'TEACHER': return '/teacher/subjects'
-    case 'EXTERNAL_SUPERVISOR': return '/teacher/supervision'
-    default: return '/admin/users'
+    case 'STUDENT': return '/student'
+    case 'TEACHER': return '/teacher'
+    case 'EXTERNAL_SUPERVISOR': return '/teacher'
+    default: return '/admin'
   }
 }
 

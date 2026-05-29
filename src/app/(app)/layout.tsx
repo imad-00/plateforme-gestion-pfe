@@ -11,16 +11,21 @@ import { Skeleton } from '@/components/ui/skeleton'
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 function defaultRoute(user: User): string {
-  if (user.platform_access_level) return '/admin/users'
+  if (user.platform_access_level) return '/admin'
   switch (user.business_identity) {
-    case 'STUDENT':             return '/student/team'
-    case 'TEACHER':             return '/teacher/subjects'
-    case 'EXTERNAL_SUPERVISOR': return '/teacher/supervision'
+    case 'STUDENT':             return '/student'
+    case 'TEACHER':             return '/teacher'
+    case 'EXTERNAL_SUPERVISOR': return '/teacher'
     default:                    return '/login'
   }
 }
 
+// Cross-role routes any authenticated user may access regardless of identity
+// or platform grant.
+const SHARED_ROUTES = ['/notifications']
+
 function isAllowed(user: User, pathname: string): boolean {
+  if (SHARED_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))) return true
   if (user.platform_access_level) return pathname.startsWith('/admin')
   switch (user.business_identity) {
     case 'STUDENT':             return pathname.startsWith('/student')
@@ -65,7 +70,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isLoading) return
-    if (!user) { router.replace('/login'); return }
+    if (!user) {
+      // A refresh token means login just completed or a session restore is
+      // still in-flight — the auth context will set user on the next render.
+      // Redirecting now would bounce the user back to /login incorrectly.
+      try { if (localStorage.getItem('gradex_refresh')) return } catch { /* ignore */ }
+      router.replace('/login')
+      return
+    }
     if (!isAllowed(user, pathname)) router.replace(defaultRoute(user))
   }, [user, isLoading, pathname, router])
 

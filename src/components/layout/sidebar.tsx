@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Eye,
   GraduationCap,
+  LayoutDashboard,
   ListChecks,
   Upload,
   UserCog,
@@ -24,9 +25,14 @@ interface NavItem {
   href: string
   label: string
   icon: React.ComponentType<{ className?: string }>
+  // When true, the item is only active for an exact pathname match. Used for
+  // role roots (/admin, /teacher, /student) so they don't stay highlighted
+  // when the user navigates into a child page like /admin/users.
+  exact?: boolean
 }
 
 const NAV_STUDENT: NavItem[] = [
+  { href: '/student',              label: 'Dashboard',    icon: LayoutDashboard, exact: true },
   { href: '/student/team',         label: 'My Team',      icon: Users      },
   { href: '/student/subjects',     label: 'Subjects',     icon: BookOpen   },
   { href: '/student/results',      label: 'Results',      icon: Award      },
@@ -34,15 +40,18 @@ const NAV_STUDENT: NavItem[] = [
 ]
 
 const NAV_TEACHER: NavItem[] = [
+  { href: '/teacher',             label: 'Dashboard',   icon: LayoutDashboard, exact: true },
   { href: '/teacher/subjects',    label: 'My Subjects', icon: BookMarked },
   { href: '/teacher/supervision', label: 'Supervision', icon: Eye        },
 ]
 
 const NAV_EXTERNAL: NavItem[] = [
+  { href: '/teacher',             label: 'Dashboard',   icon: LayoutDashboard, exact: true },
   { href: '/teacher/supervision', label: 'Supervision', icon: Eye },
 ]
 
 const NAV_ADMIN: NavItem[] = [
+  { href: '/admin',                label: 'Dashboard',      icon: LayoutDashboard, exact: true },
   { href: '/admin/users',          label: 'Users',          icon: UserCog    },
   { href: '/admin/academic-years', label: 'Academic Years', icon: CalendarDays },
   { href: '/admin/subjects',       label: 'Subjects',       icon: BookOpen   },
@@ -86,8 +95,9 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-0.5">
           {items.map(item => {
-            const active =
-              pathname === item.href || pathname.startsWith(item.href + '/')
+            const active = item.exact
+              ? pathname === item.href
+              : pathname === item.href || pathname.startsWith(item.href + '/')
             return (
               <li key={item.href}>
                 <Link
