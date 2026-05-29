@@ -5,7 +5,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsAuthenticatedAndActiveAccount
+from apps.accounts.permissions import IsAdminOrSuperAdmin, IsAuthenticatedAndActiveAccount
 from apps.deliverables.models import DeliverableFile
 from apps.deliverables.serializers import (
     DeliverableFileCommentCreateSerializer,
@@ -91,6 +91,23 @@ class SupervisedTeamFileListView(APIView):
     def get(self, request, team_code):
         team = get_object_or_404(Team.objects.select_related("academic_year"), pk=team_code)
         queryset = DeliverableFileService.list_files_for_supervised_team(request.user, team)
+        paginator = DefaultPageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(DeliverableFileSerializer(page, many=True).data)
+
+
+class AdminTeamFileListView(APIView):
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    @extend_schema(tags=["Admin Deliverables"], responses=DeliverableFileSerializer(many=True))
+    def get(self, request, team_code):
+        team = get_object_or_404(Team.objects.select_related("academic_year"), pk=team_code)
+        queryset = (
+            DeliverableFile.objects.filter(team=team)
+            .select_related("team", "uploaded_by", "reviewed_by")
+            .prefetch_related("comments__author")
+            .order_by("-uploaded_at")
+        )
         paginator = DefaultPageNumberPagination()
         page = paginator.paginate_queryset(queryset, request)
         return paginator.get_paginated_response(DeliverableFileSerializer(page, many=True).data)
