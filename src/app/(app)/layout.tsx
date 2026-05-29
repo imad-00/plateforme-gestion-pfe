@@ -24,8 +24,22 @@ function defaultRoute(user: User): string {
 // or platform grant.
 const SHARED_ROUTES = ['/notifications']
 
+function isJuryPath(pathname: string): boolean {
+  return pathname === '/jury' || pathname.startsWith('/jury/')
+}
+
 function isAllowed(user: User, pathname: string): boolean {
   if (SHARED_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))) return true
+  // Jury routes are accessible to anyone who CAN be on a jury — teachers,
+  // external supervisors, and platform admins. Students are explicitly excluded
+  // per product rule.
+  if (isJuryPath(pathname)) {
+    return (
+      user.business_identity === 'TEACHER' ||
+      user.business_identity === 'EXTERNAL_SUPERVISOR' ||
+      !!user.platform_access_level
+    )
+  }
   if (user.platform_access_level) return pathname.startsWith('/admin')
   switch (user.business_identity) {
     case 'STUDENT':             return pathname.startsWith('/student')

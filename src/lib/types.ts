@@ -602,6 +602,75 @@ export interface StudentDashboard {
   }
 }
 
+// ─── Defenses (Sprint 8 backend) ─────────────────────────────────────────────
+
+export type DefenseStatus =
+  | 'REQUESTED'
+  | 'READY_TO_SCHEDULE'
+  | 'SCHEDULED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'ARCHIVED'
+
+export type DefenseSupervisorDecisionStatus = 'PENDING' | 'ACCEPTED' | 'DENIED'
+
+export type DefenseJuryRole = 'PRESIDENT' | 'EXAMINER' | 'GUEST'
+
+export interface DefenseAttachedFile {
+  id: string // uuid
+  deliverable_file: DeliverableFile
+  order: number
+  added_by: MemberSummary
+  added_at: string
+}
+
+export interface DefenseSupervisorDecision {
+  id: string // uuid
+  supervisor: MemberSummary
+  decision: DefenseSupervisorDecisionStatus
+  decided_at: string | null
+}
+
+export interface DefenseJuryAssignment {
+  id: string // uuid
+  user: MemberSummary
+  role: DefenseJuryRole
+  assigned_by: MemberSummary
+  assigned_at: string
+}
+
+// Slim shape returned by list endpoints (admin / jury / supervisor list).
+export interface DefenseListItem {
+  id: string // uuid
+  team: Team
+  status: DefenseStatus
+  requested_by: number | null // integer user ID
+  requested_at: string
+  scheduled_at: string | null
+  location: string
+  scheduled_by: number | null
+  final_grade: string | null
+  deliberation: string
+  pv_file: string | null
+  pv_uploaded_by: number | null
+  pv_uploaded_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Full shape returned by detail endpoints and request/accept/deny/schedule responses.
+// GET /api/defenses/me/ returns `{}` when the student has no defense — callers
+// must guard with an `'id' in response` check before treating as a Defense.
+export interface DefenseDetail extends Omit<DefenseListItem, 'requested_by' | 'scheduled_by' | 'pv_uploaded_by'> {
+  requested_by: MemberSummary
+  scheduled_by: MemberSummary | null
+  pv_uploaded_by: MemberSummary | null
+  pv_file_url: string
+  attached_files: DefenseAttachedFile[]
+  supervisor_decisions: DefenseSupervisorDecision[]
+  jury_assignments: DefenseJuryAssignment[]
+}
+
 // ─── Auth responses ───────────────────────────────────────────────────────────
 
 export interface LoginResponse {

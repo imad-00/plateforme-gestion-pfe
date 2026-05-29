@@ -12,6 +12,50 @@ This file is the **guide and blocknote** for frontend work. Whenever something i
 
 Newest entries on top.
 
+### 2026-05-29 — Sprint Frontend-5c (Defenses: jury surface + PV upload) shipped + 5b admin-files backend gap closed
+
+**Backend addition (driven by frontend need)**: `GET /api/admin/teams/<team_code>/files/` added in `apps/deliverables/views.py` (`AdminTeamFileListView`) and mounted via a new `apps/deliverables/admin_urls.py`. Permission: `IsAdminOrSuperAdmin`. Standard `page` / `page_size` pagination. Closes the 5b deferred gap — admins can now pick from a team's existing deliverable files when editing defense attachments.
+
+**Frontend**:
+- **Restored `AttachExistingDialog`** in `(app)/admin/defenses/[id]/defense-detail-view.tsx` against the new admin endpoint. `FileRow.kind` regained the `existing-new` variant, `existing_file_ids` is JSON-stringified back into the multipart body. Admin file editor now does PC upload + existing team-file pick + remove + reorder — full parity with the student request flow.
+- **New shared component**: `components/shared/upload-pv-dialog.tsx`. Form: `final_grade` (number, 0..20, step 0.25), `deliberation` (textarea), `pv_file` (file). Submits multipart to a configurable `endpoint` prop — used at `/api/admin/defenses/{id}/pv/` from the admin detail view and `/api/jury/defenses/{id}/pv/` from the jury detail view.
+- **Admin PV upload wired** in `defense-detail-view.tsx`: new "Upload PV" button in the Schedule card actions when `phaseOpen && status === 'SCHEDULED'`. After upload, defense flips to COMPLETED and the PV summary card appears with grade + deliberation + downloader.
+- **`/jury/defenses`** — `(app)/jury/defenses/{page.tsx,jury-defenses-view.tsx}`. Card-based list (not DataTable — jury volumes are small). Each card shows team, status, scheduled-at, location. Click → detail. Backend list filter is fixed to SCHEDULED + COMPLETED (jury can see scheduled and history but not pending). Returns paginated, so we read `data.results`.
+- **`/jury/defenses/[id]`** — `(app)/jury/defenses/[id]/{page.tsx,jury-defense-detail-view.tsx}`. Schedule + PV summary (when COMPLETED) + Jury composition (own row highlighted with primary tint and "(you)" label) + Attached files. The PV upload button appears only when `phaseOpen && status === 'SCHEDULED' && myAssignment.role === 'PRESIDENT'` — backend enforces this too, the UI just mirrors it. Falls back to "Not in jury" subtitle text for admins viewing as non-jury (which won't normally happen since they go to /admin/defenses).
+- **Route gating**: `middleware.ts` matcher gained `/jury/:path*` and `/jury`. `(app)/layout.tsx` `isAllowed()` got a new `isJuryPath()` check: allowed when `business_identity ∈ {TEACHER, EXTERNAL_SUPERVISOR}` or `platform_access_level !== null`. Students explicitly excluded — direct nav to `/jury/...` redirects them to their default route per existing logic.
+- **Sidebar**: added `requiresJury?: boolean` flag on `NavItem`. The sidebar now also fires a `GET /api/jury/defenses/?page_size=1` probe (skipped for pure students) and only shows the "Jury" entry when `count > 0`. Lightweight — one paginator query that hits a list with a count, single round trip.
+- TypeScript clean. ESLint clean on all new files. Backend `apps/deliverables` registered in `config/urls.py`.
+
+### 2026-05-29 — Sprint Frontend-5b (Defenses: admin schedule + reschedule + jury + files) shipped
+
+- **New shared component**: [components/shared/user-picker.tsx](src/components/shared/user-picker.tsx). Controlled multi/single user selector with a Search-as-you-type dropdown backed by `GET /api/admin/users/?search=…&business_identity=TEACHER&account_status=ACTIVE`. Selected users render as removable chips above the input. Supports `excludeIds` to lock out specific users (used for cross-field exclusion in the jury form: pickedPresident is excluded from examiners, supervisors are excluded everywhere). Debounces the search 200ms; first focus also triggers an empty-query fetch so the user sees the first 15 options without typing.
+- **`/admin/defenses`** list — `(app)/admin/defenses/{page.tsx,defenses-view.tsx}`. Status filter (REQUESTED → ARCHIVED) + academic-year filter. Uses the existing `DataTable` shared component. Each row links to `/admin/defenses/{id}`. Not phase-gated — admins keep historical read access outside DEFENSE_WINDOW.
+- **`/admin/defenses/[id]`** detail — `(app)/admin/defenses/[id]/{page.tsx,defense-detail-view.tsx}`. Section cards for Schedule, PV (when COMPLETED), Supervisor decisions, Jury (when SCHEDULED+), Attached files. All four admin action dialogs colocated in the same view file (~900 lines, in line with `assignments-view.tsx`).
+  - **ScheduleDialog** (READY_TO_SCHEDULE only): datetime-local + location + `JuryFields` (president/examiners/guests). Posts `/api/admin/defenses/{id}/schedule/` as JSON. Convert local-input datetime to ISO via `new Date(local).toISOString()`.
+  - **RescheduleDialog** (SCHEDULED only): datetime + location only. Diffs against current values and only sends fields that changed (backend's `RescheduleDefenseSerializer.validate` rejects empty attrs). Posts `/api/admin/defenses/{id}/reschedule/`.
+  - **JuryDialog** (SCHEDULED only): `JuryFields` seeded from current `defense.jury_assignments` (supervisors filtered out of the guest seed so they don't show up as removable — they re-auto-add server-side). Re-sends `scheduled_at` + `location` because the backend's `UpdateJurySerializer` extends `ScheduleDefenseSerializer` and requires them. Posts `/api/admin/defenses/{id}/jury/`.
+  - **UpdateFilesDialog** (READY_TO_SCHEDULE or SCHEDULED): PC upload + remove + reorder. Seeds rows from `defense.attached_files` sorted by `order`. Tracks removed-attachment ids in a separate state so we can emit them as `remove_ids` (JSON-stringified) in the multipart body. New PC files sent as repeated `files` fields. Posts `/api/admin/defenses/{id}/files/`.
+- **`JuryFields`** shared sub-component drives both Schedule and Jury dialogs. Validates client-side: `isJuryFormValid = president.length === 1 && examiners.length >= 1`. Cross-field exclusion is wired so an already-picked user can't be reused in another slot — matches backend's `_rebuild_jury_assignments` rejection rules.
+- **Admin sidebar** gained a `Defenses` entry — not phase-gated (admins need historical access). Operational buttons inside the detail view still hide outside DEFENSE_WINDOW; a "read-only view" notice replaces them.
+- **Backend deferred**: admin cannot pick from a defense team's existing deliverable files when editing attached files. The supervision team-files endpoint (`/api/supervision/teams/{code}/files/`) requires the caller to be an active supervisor of the team — admins get a 400. Adding a backend admin-team-files endpoint was deliberately skipped to avoid a backend change. Admins can still PC-upload extra files, remove existing attachments, and reorder. If product wants existing-file attach on the admin side, add `GET /api/admin/teams/{code}/files/` to `apps/deliverables` and re-introduce the picker.
+- **PV upload** intentionally not in 5b — it's in 5c with the jury surface. The COMPLETED state renders the PV summary read-only on the admin detail page.
+- **`StatusBadge`** TIER got PRESIDENT, EXAMINER, GUEST mapped to neutral (or whatever they default to — currently they fall through to neutral since I didn't add them, which is fine since they're shown as informational badges in the jury list).
+- Backend untouched. TypeScript clean. ESLint: 0 errors in new files.
+
+### 2026-05-29 — Sprint Frontend-5a (Defenses: student request + supervisor decision) shipped
+
+Sprint 5 is split into three passes (5a, 5b, 5c) because the defenses surface spans four roles and 17 endpoints. 5a is the smallest demoable slice: student leader can submit a defense, supervisor can accept or deny.
+
+- **New types** in `lib/types.ts`: `DefenseStatus`, `DefenseSupervisorDecisionStatus`, `DefenseJuryRole`, `DefenseAttachedFile`, `DefenseSupervisorDecision`, `DefenseJuryAssignment`, `DefenseListItem`, `DefenseDetail`. The detail interface extends list with serializer-expanded fields (`requested_by`, `scheduled_by`, `pv_uploaded_by` as `MemberSummary`, plus `pv_file_url`, `attached_files`, `supervisor_decisions`, `jury_assignments`).
+- **`/student/defense`** — `(app)/student/defense/{page.tsx,defense-view.tsx}`. Shows the team's current defense via `GET /api/defenses/me/` (with `hasDefense()` guard for the backend's empty-`{}` no-defense response). Status card renders supervisor decisions, attached files, scheduled-at + location (when SCHEDULED), and the PV summary (final grade, deliberation, PV download link) when COMPLETED.
+- **`RequestDefenseDialog`** — drag/drop or click for new file uploads + an **Attach existing files** button that opens a sub-modal (`AttachExistingDialog`) with a checkbox list pulled from `GET /api/deliverable-files/me/`. Already-attached files are filtered out of the sub-modal. Both kinds appear in a combined ordered list with order chips and individual remove buttons. Submit uses multipart form data: `existing_file_ids` as a JSON-stringified array (the backend's `_extract_list` helper unwraps it) and `files` as repeated multipart fields. Request button only appears for the active leader, never members.
+- **`/teacher/defense-requests`** — `(app)/teacher/defense-requests/{page.tsx,defense-requests-view.tsx}`. Lists everything from `GET /api/supervision/defense-requests/` (paginated, includes historical entries where the supervisor already decided). Each card lazy-fetches `GET /api/jury/defenses/{id}/` for the supervisor-decisions roster — the jury detail endpoint also accepts active supervisors via `can_access_defense_files`, so it doubles as the supervisor detail view. Accept/Deny buttons only render when `myDecision.decision === 'PENDING'`; Deny goes through a destructive `ConfirmDialog` warning that it cancels the whole workflow.
+- **Phase-aware sidebar** — `components/layout/sidebar.tsx` gained a `requiresPhase?: PhaseType` field on `NavItem`. The sidebar now does one `GET /api/campaign/current/` fetch and filters entries whose `requiresPhase` isn't in `open_phases`. Student `Defense` and teacher/external `Defense requests` entries are hidden outside `DEFENSE_WINDOW`. Failed fetch is silent — entries simply stay hidden.
+- **Route-level lock** — the student defense view also gates internally (`accessible = phaseOpen && team.status === 'VALIDATED' && team.selected_subject_id`), so direct navigation outside the window shows a "The defense workflow isn't available yet." `LockedNotice` and the Request button doesn't appear. Per product rule: no enumeration of unmet preconditions — the feature is either available or hidden.
+- **`StatusBadge`** got 7 new mappings (REQUESTED, READY_TO_SCHEDULE, SCHEDULED, COMPLETED, CANCELLED, DENIED, plus REQUESTED→warning, COMPLETED→success). Defenses surface needed colour tiers the badge didn't know yet.
+- Backend untouched. TypeScript clean (`npx tsc --noEmit` exit 0). No smoke test yet — deferred to after 5b + 5c per user instruction "leave those tests for later".
+- **Not in this pass**: admin scheduling, jury surface, PV upload, file picker reordering. All planned for 5b and 5c.
+
 ### 2026-05-29 — Sprint Frontend-4 (Notifications) shipped
 - **Notification bell in the Topbar** (`components/layout/notification-bell.tsx`) with unread-count badge (caps at `99+`). Clicking opens a Popover panel showing the latest 10 items with title, message, relative time, and a primary-coloured dot for unread. Clicking an item marks it read (optimistic), and if its `link_url` is non-empty, navigates there and closes the panel. "Mark all read" button in the header; "View all notifications →" link in the footer.
 - **Polling hook** `hooks/use-unread-notifications.ts` — calls `GET /api/notifications/unread-count/` every 30s. Uses the **Page Visibility API**: stops polling when the tab is hidden, fetches immediately on visibility restore. Exposes `refresh()` (manual re-fetch) and `setUnreadCount(n)` (optimistic delta for mutation callers). Single-flight guard prevents overlapping requests if a poll fires during a manual refresh.
@@ -926,14 +970,27 @@ Deferred to a polish pass:
 
 ### Sprint Frontend-5 — Defenses Workflow (Sprint 8 backend)
 
-The biggest single chunk. Touches four roles:
+Split into three passes because the surface spans four roles and 17 endpoints.
 
-- **Student** (`/student/defense`): request defense (select files from existing deliverables or upload new), view my defense status, view attached files
-- **Supervisor** (`/teacher/defense-requests`): list pending requests for teams I supervise, accept or deny each
-- **Admin** (`/admin/defenses`): list all defenses by status, schedule + reschedule + assign jury (1 PRESIDENT, ≥1 EXAMINER), edit attached files, upload PV
-- **Jury** (`/jury/defenses`): list defenses I'm assigned to, view files, upload PV (if PRESIDENT)
+**5a — Student request + Supervisor decision — ✅ DONE (2026-05-29)**
+- `/student/defense` — request defense (drag/drop new files + attach-existing sub-modal), view status with supervisor decisions, attached files, schedule info, PV summary.
+- `/teacher/defense-requests` — paginated list with accept/deny per row. Destructive Deny confirm.
+- Phase-aware sidebar entries (hidden outside DEFENSE_WINDOW).
 
-Status transitions visualised inline. PV upload form: `final_grade` (0..20), `deliberation` (textarea), `pv_file` (PDF upload). Phase gating: all actions require `DEFENSE_WINDOW`.
+**5b — Admin schedule + reschedule + jury + files — ✅ DONE (2026-05-29)**
+- `/admin/defenses` list + `/admin/defenses/[id]` detail.
+- Schedule, Reschedule, Jury, and Update Files dialogs all live in the detail view.
+- Shared `UserPicker` component (search-as-you-type, multi/single, cross-field exclusion).
+- Admin file editor supports PC upload + existing team-file pick + remove + reorder (backend gap closed in 5c — see §0).
+
+**5c — Jury surface + PV upload — ✅ DONE (2026-05-29)**
+- Backend addition: `GET /api/admin/teams/<team_code>/files/` to close the 5b admin-file gap.
+- `/jury/defenses` list + `/jury/defenses/[id]` detail.
+- Shared `UploadPVDialog` component used by both admin (`/api/admin/defenses/{id}/pv/`) and jury PRESIDENT (`/api/jury/defenses/{id}/pv/`).
+- Route gating: `/jury` allowed for TEACHER + EXTERNAL_SUPERVISOR + admins; students excluded.
+- Sidebar Jury entry conditional on `count > 0` from a `/api/jury/defenses/?page_size=1` probe.
+
+**Sprint 5 = ✅ COMPLETE.** All four roles covered, all 17 backend endpoints consumed, plus one new admin endpoint for parity. Phase gating throughout: all operational actions require `DEFENSE_WINDOW`. Admin list remains visible outside the window for historical reads; only the action buttons gate. Per product rule: when phase is closed (or for students, no validated team / no subject), the entire feature surface is hidden — no enumeration of unmet preconditions.
 
 ### Sprint Frontend-6 — Lifecycle, Reports, Imports, Audit
 

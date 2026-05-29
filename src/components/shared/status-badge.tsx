@@ -12,17 +12,23 @@ const TIER: Record<string, StatusTier> = {
   ACCEPTED:    'success',
   ACTIVE:      'success',
   VALIDATED:   'success',
+  COMPLETED:   'success',
+  SCHEDULED:   'success',
   // warning
   SUBMITTED:   'warning',
   PENDING:     'warning',
   LOCKED:      'warning',
   FORMING:     'warning',
+  REQUESTED:   'warning',
+  READY_TO_SCHEDULE: 'warning',
   // error
   REJECTED:    'error',
   DISSOLVED:   'error',
   SUSPENDED:   'error',
   ARCHIVED:    'error',
   NEEDS_REVISION: 'error',
+  CANCELLED:   'error',
+  DENIED:      'error',
   // neutral
   DRAFT:       'neutral',
   CLOSED:      'neutral',

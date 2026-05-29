@@ -8,7 +8,9 @@ import {
   BookOpen,
   CalendarDays,
   Eye,
+  Gavel,
   GraduationCap,
+  Landmark,
   LayoutDashboard,
   ListChecks,
   Upload,
@@ -16,7 +18,9 @@ import {
   Users,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import type { User } from '@/lib/types'
+import { api } from '@/lib/api-client'
+import { useApi } from '@/hooks/use-api'
+import type { CampaignStatus, DefenseListItem, PaginatedResponse, PhaseType, User } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
@@ -29,6 +33,12 @@ interface NavItem {
   // role roots (/admin, /teacher, /student) so they don't stay highlighted
   // when the user navigates into a child page like /admin/users.
   exact?: boolean
+  // When set, the entry only renders while this phase is in `open_phases`.
+  // Used by Defense routes so they vanish outside DEFENSE_WINDOW.
+  requiresPhase?: PhaseType
+  // When true, the entry only renders if the user currently has ≥1 jury
+  // assignment (used for /jury/defenses).
+  requiresJury?: boolean
 }
 
 const NAV_STUDENT: NavItem[] = [
@@ -37,17 +47,22 @@ const NAV_STUDENT: NavItem[] = [
   { href: '/student/subjects',     label: 'Subjects',     icon: BookOpen   },
   { href: '/student/results',      label: 'Results',      icon: Award      },
   { href: '/student/deliverables', label: 'Deliverables', icon: Upload     },
+  { href: '/student/defense',      label: 'Defense',      icon: Landmark,   requiresPhase: 'DEFENSE_WINDOW' },
 ]
 
 const NAV_TEACHER: NavItem[] = [
-  { href: '/teacher',             label: 'Dashboard',   icon: LayoutDashboard, exact: true },
-  { href: '/teacher/subjects',    label: 'My Subjects', icon: BookMarked },
-  { href: '/teacher/supervision', label: 'Supervision', icon: Eye        },
+  { href: '/teacher',                  label: 'Dashboard',        icon: LayoutDashboard, exact: true },
+  { href: '/teacher/subjects',         label: 'My Subjects',      icon: BookMarked },
+  { href: '/teacher/supervision',      label: 'Supervision',      icon: Eye        },
+  { href: '/teacher/defense-requests', label: 'Defense requests', icon: Landmark, requiresPhase: 'DEFENSE_WINDOW' },
+  { href: '/jury/defenses',            label: 'Jury',             icon: Gavel,    requiresJury: true },
 ]
 
 const NAV_EXTERNAL: NavItem[] = [
-  { href: '/teacher',             label: 'Dashboard',   icon: LayoutDashboard, exact: true },
-  { href: '/teacher/supervision', label: 'Supervision', icon: Eye },
+  { href: '/teacher',                  label: 'Dashboard',        icon: LayoutDashboard, exact: true },
+  { href: '/teacher/supervision',      label: 'Supervision',      icon: Eye },
+  { href: '/teacher/defense-requests', label: 'Defense requests', icon: Landmark, requiresPhase: 'DEFENSE_WINDOW' },
+  { href: '/jury/defenses',            label: 'Jury',             icon: Gavel,    requiresJury: true },
 ]
 
 const NAV_ADMIN: NavItem[] = [
@@ -57,6 +72,8 @@ const NAV_ADMIN: NavItem[] = [
   { href: '/admin/subjects',       label: 'Subjects',       icon: BookOpen   },
   { href: '/admin/teams',          label: 'Teams',          icon: Users      },
   { href: '/admin/assignments',    label: 'Assignments',    icon: ListChecks },
+  { href: '/admin/defenses',       label: 'Defenses',       icon: Landmark   },
+  { href: '/jury/defenses',        label: 'Jury',           icon: Gavel,    requiresJury: true },
 ]
 
 function getNavItems(user: User): NavItem[] {
@@ -74,10 +91,31 @@ function getNavItems(user: User): NavItem[] {
 export function Sidebar() {
   const { user } = useAuth()
   const pathname = usePathname()
+  // One quick fetch shared by every phase-gated entry. Errors are silent —
+  // a failed campaign fetch simply hides phase-gated routes rather than blocking
+  // the sidebar.
+  const campaignApi = useApi<CampaignStatus>(() => api.get('/api/campaign/current/'), [])
+  // Probe the jury list to know whether to surface the Jury entry. Students
+  // are never jury (excluded server-side too) so we skip the probe for them.
+  // Errors are silent — a failed fetch simply hides the entry.
+  const isStudent = user?.business_identity === 'STUDENT' && !user?.platform_access_level
+  const juryApi = useApi<PaginatedResponse<DefenseListItem>>(
+    () =>
+      isStudent
+        ? Promise.resolve({ count: 0, next: null, previous: null, results: [] })
+        : api.get('/api/jury/defenses/?page_size=1'),
+    [isStudent],
+  )
 
   if (!user) return null
 
-  const items = getNavItems(user)
+  const openPhases = new Set(campaignApi.data?.open_phases ?? [])
+  const hasJuryAssignments = (juryApi.data?.count ?? 0) > 0
+  const items = getNavItems(user).filter(item => {
+    if (item.requiresPhase && !openPhases.has(item.requiresPhase)) return false
+    if (item.requiresJury && !hasJuryAssignments) return false
+    return true
+  })
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
