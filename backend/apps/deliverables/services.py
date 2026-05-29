@@ -70,7 +70,7 @@ class DeliverableFileService:
             raise serializers.ValidationError({"detail": "Only active team members can upload work files."})
         CampaignPhaseService.require_open(team.academic_year, CampaignPhase.PhaseType.WORK_AND_SUPERVISION)
         original_filename, file_size, content_type = DeliverableFileService._extract_file_metadata(uploaded_file)
-        return DeliverableFile.objects.create(
+        deliverable_file = DeliverableFile.objects.create(
             team=team,
             file=uploaded_file,
             original_filename=original_filename,
@@ -79,6 +79,10 @@ class DeliverableFileService:
             uploaded_by=actor,
             comment=(comment or "").strip(),
         )
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_deliverable_uploaded(deliverable_file, actor=actor)
+        return deliverable_file
 
     @staticmethod
     def list_supervised_teams(supervisor_user):
@@ -89,6 +93,7 @@ class DeliverableFileService:
                 participants__status=TeamParticipant.Status.ACTIVE,
                 status=Team.Status.VALIDATED,
             )
+            .exclude(academic_year__status="ARCHIVED")
             .select_related("academic_year")
             .prefetch_related("participants__user", "deliverable_files")
             .distinct()
@@ -96,6 +101,9 @@ class DeliverableFileService:
 
     @staticmethod
     def list_files_for_supervised_team(supervisor_user, team):
+        from apps.archives.services import AcademicYearLifecycleService
+
+        AcademicYearLifecycleService.assert_archived_access_allowed(supervisor_user, team.academic_year)
         if DeliverableFileService._active_supervisor_participation(team, supervisor_user) is None:
             raise serializers.ValidationError({"detail": "You do not supervise this team."})
         return DeliverableFile.objects.select_related("team", "uploaded_by", "reviewed_by").prefetch_related(
@@ -104,7 +112,11 @@ class DeliverableFileService:
 
     @staticmethod
     def can_access_file(user, deliverable_file):
+        from apps.archives.services import AcademicYearLifecycleService
+
         if not user or getattr(user, "account_status", None) != User.AccountStatus.ACTIVE:
+            return False
+        if not AcademicYearLifecycleService.can_access_archived_year(user, deliverable_file.team.academic_year):
             return False
         if DeliverableFileService._active_student_participation_for_team(deliverable_file.team, user) is not None:
             return True
@@ -153,6 +165,9 @@ class DeliverableFileService:
                 "updated_at",
             ]
         )
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_deliverable_reviewed(deliverable_file, actor=supervisor_user)
         return deliverable_file
 
     @staticmethod
@@ -160,13 +175,20 @@ class DeliverableFileService:
     def add_comment(author, deliverable_file, text):
         author = TeamService.lock_user(author)
         deliverable_file = DeliverableFile.objects.select_for_update().select_related("team").get(pk=deliverable_file.pk)
+        from apps.archives.services import AcademicYearLifecycleService
+
+        AcademicYearLifecycleService.assert_academic_year_writable(deliverable_file.team.academic_year)
         DeliverableFileService._ensure_comment_author(deliverable_file.team, author)
         CampaignPhaseService.require_open(
             deliverable_file.team.academic_year,
             CampaignPhase.PhaseType.WORK_AND_SUPERVISION,
         )
-        return DeliverableFileComment.objects.create(
+        comment = DeliverableFileComment.objects.create(
             deliverable_file=deliverable_file,
             author=author,
             text=text.strip(),
         )
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_deliverable_comment_added(comment, actor=author)
+        return comment

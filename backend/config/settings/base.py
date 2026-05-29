@@ -18,6 +18,7 @@ env = environ.Env(
     EMAIL_PORT=(int, 587),
     EMAIL_USE_TLS=(bool, True),
     EMAIL_USE_SSL=(bool, False),
+    CORS_ALLOWED_ORIGINS=(list, ["http://localhost:3000"]),
 )
 
 for env_path in (ROOT_DIR / ".env", REPO_DIR / ".env"):
@@ -55,6 +56,10 @@ INSTALLED_APPS = [
     "apps.deliverables",
     "apps.defenses",
     "apps.archives",
+    "apps.reports",
+    "apps.notifications",
+    "apps.dashboard",
+    "apps.imports",
     "apps.audit",
 ]
 
@@ -212,3 +217,6 @@ else:
 
 DEFAULT_PAGE_SIZE = env.int("API_PAGE_SIZE")
 MAX_PAGE_SIZE = env.int("API_MAX_PAGE_SIZE")
+
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+CORS_ALLOW_CREDENTIALS = True

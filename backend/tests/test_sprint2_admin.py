@@ -83,8 +83,8 @@ def test_admin_cannot_create_super_admin(admin_user):
 
 
 @pytest.mark.django_db
-def test_academic_year_creation_valid(admin_user):
-    client = auth_client(admin_user)
+def test_academic_year_creation_valid(super_admin_user):
+    client = auth_client(super_admin_user)
 
     response = client.post(
         "/api/admin/academic-years/",
@@ -97,8 +97,8 @@ def test_academic_year_creation_valid(admin_user):
 
 
 @pytest.mark.django_db
-def test_academic_year_unique_active_constraint_auto_switch(admin_user):
-    client = auth_client(admin_user)
+def test_academic_year_unique_active_constraint_no_auto_switch(super_admin_user):
+    client = auth_client(super_admin_user)
 
     first = AcademicYear.objects.create(year="2024/2025", status=AcademicYear.Status.ACTIVE)
     response = client.post(
@@ -107,10 +107,10 @@ def test_academic_year_unique_active_constraint_auto_switch(admin_user):
         format="json",
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 400
     first.refresh_from_db()
-    assert first.status == AcademicYear.Status.ARCHIVED
-    assert AcademicYear.objects.get(year="2025/2026").status == AcademicYear.Status.ACTIVE
+    assert first.status == AcademicYear.Status.ACTIVE
+    assert not AcademicYear.objects.filter(year="2025/2026").exists()
 
 
 @pytest.mark.django_db
@@ -125,7 +125,7 @@ def test_archived_academic_year_cannot_be_reactivated(admin_user):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Archived academic year cannot be updated."
+    assert response.json()["detail"] == "Only ACTIVE academic years can be updated through the normal admin endpoint."
 
 
 @pytest.mark.django_db
@@ -170,15 +170,19 @@ def test_patching_archived_academic_year_is_rejected(admin_user):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Archived academic year cannot be updated."
+    assert response.json()["detail"] == "Only ACTIVE academic years can be updated through the normal admin endpoint."
 
 
 @pytest.mark.django_db
-def test_academic_year_archive_endpoint(admin_user):
-    client = auth_client(admin_user)
-    year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.ACTIVE)
+def test_academic_year_archive_endpoint_requires_super_admin_and_closed_year(super_admin_user):
+    client = auth_client(super_admin_user)
+    year = AcademicYear.objects.create(year="2025/2026", status=AcademicYear.Status.CLOSED)
 
-    response = client.post(f"/api/admin/academic-years/{year.id}/archive/", {}, format="json")
+    response = client.post(
+        f"/api/admin/academic-years/{year.id}/archive/",
+        {"reason": "Historical archive", "confirm": True},
+        format="json",
+    )
 
     assert response.status_code == 200
     year.refresh_from_db()

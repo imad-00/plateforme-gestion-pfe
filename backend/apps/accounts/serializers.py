@@ -69,6 +69,7 @@ class UserSerializer(serializers.ModelSerializer):
             "last_name",
             "business_identity",
             "account_status",
+            "must_reset_password",
             "platform_access_level",
             "student_profile",
             "teacher_profile",
@@ -95,6 +96,7 @@ class LoginSerializer(serializers.Serializer):
         "invalid_credentials": "Invalid identifier or password.",
         "archived": "This account is archived.",
         "inactive": "This account is inactive.",
+        "password_reset_required": "Password reset required. Please use forgot password.",
     }
 
     def _resolve_user(self, identifier):
@@ -124,6 +126,8 @@ class LoginSerializer(serializers.Serializer):
 
         if user is None:
             raise LoginRejected(self.error_messages["invalid_credentials"])
+        if getattr(user, "must_reset_password", False):
+            raise LoginRejected(self.error_messages["password_reset_required"])
 
         refresh = RefreshToken.for_user(user)
 
@@ -290,7 +294,8 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         new_password = validated_data["new_password"]
 
         user.set_password(new_password)
-        user.save(update_fields=["password", "updated_at"])
+        user.must_reset_password = False
+        user.save(update_fields=["password", "must_reset_password", "updated_at"])
 
         otp_record.consumed_at = timezone.now()
         otp_record.save(update_fields=["consumed_at", "updated_at"])

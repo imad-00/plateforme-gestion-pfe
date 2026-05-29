@@ -219,6 +219,27 @@ class AdminAssignmentValidateView(APIView):
         return Response(TeamDetailSerializer(team).data, status=status.HTTP_200_OK)
 
 
+class AdminAppealListView(APIView):
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    @extend_schema(tags=["Admin Appeals"], responses=AppealSerializer(many=True))
+    def get(self, request):
+        queryset = (
+            Appeal.objects.select_related("team", "submitted_by", "reviewed_by")
+            .order_by("-submitted_at")
+        )
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        team_code = request.query_params.get("team_code")
+        if team_code:
+            queryset = queryset.filter(team_id=team_code)
+
+        paginator = DefaultPageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        return paginator.get_paginated_response(AppealSerializer(page, many=True).data)
+
+
 class AdminAppealAcceptView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 

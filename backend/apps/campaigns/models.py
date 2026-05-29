@@ -53,8 +53,8 @@ class CampaignPhase(models.Model):
         return f"{self.academic_year.year} - {self.phase_type}"
 
     def clean(self):
-        if self.academic_year.status == "ARCHIVED":
-            raise ValidationError({"academic_year": "Cannot attach phase to archived academic year."})
+        if self.academic_year.status != "ACTIVE":
+            raise ValidationError({"academic_year": "Campaign phases can be modified only for ACTIVE academic years."})
 
         if self.end_at is not None and self.end_at < self.start_at:
             raise ValidationError({"end_at": "end_at must be greater than or equal to start_at."})
