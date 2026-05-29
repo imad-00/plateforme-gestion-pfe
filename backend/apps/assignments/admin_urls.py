@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.assignments.views import (
     AdminAppealAcceptView,
+    AdminAppealListView,
     AdminAppealRejectView,
     AdminAssignmentValidateView,
     AdminManualAssignmentView,
@@ -22,6 +23,7 @@ urlpatterns = [
         AdminAssignmentValidateView.as_view(),
         name="admin-assignment-validate",
     ),
+    path("appeals/", AdminAppealListView.as_view(), name="admin-appeal-list"),
     path("appeals/<uuid:appeal_id>/accept/", AdminAppealAcceptView.as_view(), name="admin-appeal-accept"),
     path("appeals/<uuid:appeal_id>/reject/", AdminAppealRejectView.as_view(), name="admin-appeal-reject"),
 ]
