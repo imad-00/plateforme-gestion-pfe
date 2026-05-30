@@ -2,7 +2,12 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 
-from apps.accounts.models import PlatformAccessGrant, StudentProfile, TeacherProfile
+from apps.accounts.models import (
+    ExternalSupervisorProfile,
+    PlatformAccessGrant,
+    StudentProfile,
+    TeacherProfile,
+)
 from apps.accounts.permissions import get_platform_levels
 from apps.academics.models import AcademicYear
 
@@ -49,9 +54,29 @@ class TeacherProfileAdminSerializer(serializers.ModelSerializer):
         fields = ["grade", "department", "departement"]
 
 
+class ExternalSupervisorProfileAdminSerializer(serializers.ModelSerializer):
+    # Mirrors StudentProfileAdminSerializer: must point at the active year.
+    # The AdminUserCreateUpdateSerializer._sync_profiles auto-fills it when
+    # the caller omits the field.
+
+    def validate_academic_year(self, value):
+        if value is None:
+            return value
+        if value.status != AcademicYear.Status.ACTIVE:
+            raise serializers.ValidationError(
+                "External supervisor profile must be linked to the active academic year."
+            )
+        return value
+
+    class Meta:
+        model = ExternalSupervisorProfile
+        fields = ["academic_year", "organization", "job_title", "expertise_area"]
+
+
 class AdminUserListSerializer(serializers.ModelSerializer):
     student_profile = StudentProfileAdminSerializer(read_only=True)
     teacher_profile = TeacherProfileAdminSerializer(read_only=True)
+    external_supervisor_profile = ExternalSupervisorProfileAdminSerializer(read_only=True)
     platform_access_level = serializers.SerializerMethodField()
 
     class Meta:
@@ -68,6 +93,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             "platform_access_level",
             "student_profile",
             "teacher_profile",
+            "external_supervisor_profile",
             "created_at",
             "updated_at",
         ]
@@ -86,6 +112,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
     student_profile = StudentProfileAdminSerializer(required=False, allow_null=True)
     teacher_profile = TeacherProfileAdminSerializer(required=False, allow_null=True)
+    external_supervisor_profile = ExternalSupervisorProfileAdminSerializer(required=False, allow_null=True)
     password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
@@ -100,6 +127,7 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             "must_reset_password",
             "student_profile",
             "teacher_profile",
+            "external_supervisor_profile",
             "password",
         ]
 
@@ -135,31 +163,43 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
         )
         student_data = attrs.get("student_profile")
         teacher_data = attrs.get("teacher_profile")
+        external_data = attrs.get("external_supervisor_profile")
         self._validate_actor_scope(identity)
 
-        if identity == User.BusinessIdentity.STUDENT and teacher_data is not None:
+        if identity == User.BusinessIdentity.STUDENT and (teacher_data is not None or external_data is not None):
             raise serializers.ValidationError(
-                {"teacher_profile": "Teacher profile is not allowed for STUDENT identity."}
+                "STUDENT identity must not include teacher or external supervisor profile payload."
             )
 
-        if identity == User.BusinessIdentity.TEACHER and student_data is not None:
+        if identity == User.BusinessIdentity.TEACHER and (student_data is not None or external_data is not None):
             raise serializers.ValidationError(
-                {"student_profile": "Student profile is not allowed for TEACHER identity."}
+                "TEACHER identity must not include student or external supervisor profile payload."
             )
 
-        if identity in {
-            User.BusinessIdentity.ADMINISTRATIVE_STAFF,
-            User.BusinessIdentity.EXTERNAL_SUPERVISOR,
-        } and (student_data is not None or teacher_data is not None):
+        if identity == User.BusinessIdentity.EXTERNAL_SUPERVISOR and (student_data is not None or teacher_data is not None):
             raise serializers.ValidationError(
-                "Staff/external identities must not include student or teacher profile payload."
+                "EXTERNAL_SUPERVISOR identity must not include student or teacher profile payload."
             )
 
-        if identity == User.BusinessIdentity.STUDENT:
+        if identity == User.BusinessIdentity.ADMINISTRATIVE_STAFF and any(
+            payload is not None for payload in (student_data, teacher_data, external_data)
+        ):
+            raise serializers.ValidationError(
+                "Administrative staff identity must not include any role-specific profile payload."
+            )
+
+        # Year-scoped identities (students + externals) require an active year
+        # at creation. The _sync_profiles step writes it onto the profile.
+        if identity in {User.BusinessIdentity.STUDENT, User.BusinessIdentity.EXTERNAL_SUPERVISOR}:
             active_year = self._get_active_academic_year()
             if active_year is None:
+                key = (
+                    "student_profile"
+                    if identity == User.BusinessIdentity.STUDENT
+                    else "external_supervisor_profile"
+                )
                 raise serializers.ValidationError(
-                    {"student_profile": "No active academic year is configured."}
+                    {key: "No active academic year is configured."}
                 )
 
         if self.instance is None and not attrs.get("password"):
@@ -203,18 +243,20 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         student_data = validated_data.pop("student_profile", None)
         teacher_data = validated_data.pop("teacher_profile", None)
+        external_data = validated_data.pop("external_supervisor_profile", None)
         password = validated_data.pop("password")
 
         user = User.objects.create_user(password=password, **validated_data)
         self._sync_platform_flags(user)
         user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
-        self._sync_profiles(user, student_data, teacher_data)
+        self._sync_profiles(user, student_data, teacher_data, external_data)
         return user
 
     @transaction.atomic
     def update(self, instance, validated_data):
         student_data = validated_data.pop("student_profile", None)
         teacher_data = validated_data.pop("teacher_profile", None)
+        external_data = validated_data.pop("external_supervisor_profile", None)
         password = validated_data.pop("password", None)
 
         for field, value in validated_data.items():
@@ -225,10 +267,10 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
 
         self._sync_platform_flags(instance)
         instance.save()
-        self._sync_profiles(instance, student_data, teacher_data)
+        self._sync_profiles(instance, student_data, teacher_data, external_data)
         return instance
 
-    def _sync_profiles(self, user, student_data, teacher_data):
+    def _sync_profiles(self, user, student_data, teacher_data, external_data):
         identity = user.business_identity
 
         if identity == User.BusinessIdentity.STUDENT:
@@ -254,6 +296,7 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
 
             TeamService.create_solo_team_for_student(user, academic_year=active_year)
             TeacherProfile.objects.filter(user=user).delete()
+            ExternalSupervisorProfile.objects.filter(user=user).delete()
             return
 
         if identity == User.BusinessIdentity.TEACHER:
@@ -262,10 +305,35 @@ class AdminUserCreateUpdateSerializer(serializers.ModelSerializer):
             else:
                 TeacherProfile.objects.get_or_create(user=user)
             StudentProfile.objects.filter(user=user).delete()
+            ExternalSupervisorProfile.objects.filter(user=user).delete()
+            return
+
+        if identity == User.BusinessIdentity.EXTERNAL_SUPERVISOR:
+            active_year = self._get_active_academic_year()
+            if active_year is None:
+                raise serializers.ValidationError(
+                    {"external_supervisor_profile": "No active academic year is configured."}
+                )
+
+            effective_external_data = dict(external_data or {})
+            provided_year = effective_external_data.get("academic_year")
+            if provided_year is not None and provided_year.id != active_year.id:
+                raise serializers.ValidationError(
+                    {
+                        "external_supervisor_profile": {
+                            "academic_year": "External supervisor must use the active academic year."
+                        }
+                    }
+                )
+            effective_external_data["academic_year"] = active_year
+            ExternalSupervisorProfile.objects.update_or_create(user=user, defaults=effective_external_data)
+            StudentProfile.objects.filter(user=user).delete()
+            TeacherProfile.objects.filter(user=user).delete()
             return
 
         StudentProfile.objects.filter(user=user).delete()
         TeacherProfile.objects.filter(user=user).delete()
+        ExternalSupervisorProfile.objects.filter(user=user).delete()
 
 
 class SuperAdminCreateAdminSerializer(serializers.ModelSerializer):

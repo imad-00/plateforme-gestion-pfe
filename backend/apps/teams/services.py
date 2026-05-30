@@ -182,6 +182,14 @@ class TeamService:
         AcademicYearLifecycleService.assert_academic_year_writable(team.academic_year)
         if team.status in {Team.Status.DISSOLVED, Team.Status.ARCHIVED}:
             return team
+        # Snapshot active participants BEFORE we end them so the notification
+        # actually reaches the people who lost their team.
+        affected_users = list(
+            User.objects.filter(
+                team_participations__team=team,
+                team_participations__status=TeamParticipant.Status.ACTIVE,
+            ).distinct()
+        )
         now = timezone.now()
         team.status = Team.Status.DISSOLVED
         team.dissolved_at = now
@@ -191,6 +199,10 @@ class TeamService:
             ended_at=now,
             updated_at=now,
         )
+        if affected_users:
+            from apps.notifications.services import NotificationService
+
+            NotificationService.notify_team_dissolved(team, affected_users, actor=actor)
         return team
 
     @staticmethod
@@ -315,6 +327,9 @@ class InvitationService:
         participation.status = TeamParticipant.Status.REJECTED
         participation.ended_at = timezone.now()
         participation.save(update_fields=["status", "ended_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_invitation_rejected(participation, actor=actor)
         return participation
 
 
@@ -466,13 +481,17 @@ class ParticipationService:
             raise serializers.ValidationError({"user": "Supervisor account must be ACTIVE."})
         if supervisor_user.business_identity not in {User.BusinessIdentity.TEACHER, User.BusinessIdentity.EXTERNAL_SUPERVISOR}:
             raise serializers.ValidationError({"user": "Supervisor must be a Teacher or ExternalSupervisor."})
-        participant, _ = TeamParticipant.objects.get_or_create(
+        participant, created = TeamParticipant.objects.get_or_create(
             team=team,
             user=supervisor_user,
             role=TeamParticipant.Role.SUPERVISOR,
             status=TeamParticipant.Status.ACTIVE,
             defaults={"joined_at": timezone.now()},
         )
+        if created:
+            from apps.notifications.services import NotificationService
+
+            NotificationService.notify_team_supervisor_added(team, supervisor_user, actor=actor)
         return participant
 
     @staticmethod
@@ -492,4 +511,7 @@ class ParticipationService:
         participant.status = TeamParticipant.Status.ENDED
         participant.ended_at = timezone.now()
         participant.save(update_fields=["status", "ended_at", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_team_supervisor_removed(team, supervisor_user, actor=actor)
         return participant

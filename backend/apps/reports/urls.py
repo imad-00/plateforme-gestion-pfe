@@ -3,12 +3,16 @@ from django.urls import path
 from apps.reports.views import (
     DefenseReportCSVView,
     DefenseReportView,
+    DefenseReportXLSXView,
     JuryPlanningReportCSVView,
     JuryPlanningReportView,
+    JuryPlanningReportXLSXView,
     StudentResultsReportCSVView,
     StudentResultsReportView,
+    StudentResultsReportXLSXView,
     TeamAssignmentReportCSVView,
     TeamAssignmentReportView,
+    TeamAssignmentReportXLSXView,
 )
 
 urlpatterns = [
@@ -23,6 +27,11 @@ urlpatterns = [
         name="admin-report-defenses-csv",
     ),
     path(
+        "reports/academic-years/<int:academic_year_id>/defenses.xlsx",
+        DefenseReportXLSXView.as_view(),
+        name="admin-report-defenses-xlsx",
+    ),
+    path(
         "reports/academic-years/<int:academic_year_id>/team-assignments/",
         TeamAssignmentReportView.as_view(),
         name="admin-report-team-assignments",
@@ -31,6 +40,11 @@ urlpatterns = [
         "reports/academic-years/<int:academic_year_id>/team-assignments.csv",
         TeamAssignmentReportCSVView.as_view(),
         name="admin-report-team-assignments-csv",
+    ),
+    path(
+        "reports/academic-years/<int:academic_year_id>/team-assignments.xlsx",
+        TeamAssignmentReportXLSXView.as_view(),
+        name="admin-report-team-assignments-xlsx",
     ),
     path(
         "reports/academic-years/<int:academic_year_id>/student-results/",
@@ -43,6 +57,11 @@ urlpatterns = [
         name="admin-report-student-results-csv",
     ),
     path(
+        "reports/academic-years/<int:academic_year_id>/student-results.xlsx",
+        StudentResultsReportXLSXView.as_view(),
+        name="admin-report-student-results-xlsx",
+    ),
+    path(
         "reports/academic-years/<int:academic_year_id>/jury-planning/",
         JuryPlanningReportView.as_view(),
         name="admin-report-jury-planning",
@@ -51,5 +70,10 @@ urlpatterns = [
         "reports/academic-years/<int:academic_year_id>/jury-planning.csv",
         JuryPlanningReportCSVView.as_view(),
         name="admin-report-jury-planning-csv",
+    ),
+    path(
+        "reports/academic-years/<int:academic_year_id>/jury-planning.xlsx",
+        JuryPlanningReportXLSXView.as_view(),
+        name="admin-report-jury-planning-xlsx",
     ),
 ]

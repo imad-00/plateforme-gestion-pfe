@@ -16,6 +16,7 @@ urlpatterns = [
     path("api/admin/", include("apps.assignments.admin_urls")),
     path("api/admin/", include("apps.defenses.admin_urls")),
     path("api/admin/", include("apps.deliverables.admin_urls")),
+    path("api/admin/", include("apps.notifications.admin_urls")),
     path("api/admin/", include("apps.reports.urls")),
     path("api/admin/", include("apps.imports.urls")),
     path("api/super-admin/", include("apps.accounts.super_admin_urls")),

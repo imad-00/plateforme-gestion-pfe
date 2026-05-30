@@ -1,5 +1,6 @@
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
 from django.utils import timezone
 
 from config.celery import app
@@ -27,18 +28,32 @@ def send_notification_email(notification_id):
         delivery.save(update_fields=["status", "attempted_at", "error_message", "updated_at"])
         return
 
-    body = notification.message
+    # Plain-text body — preserved as the fallback (some mail clients only render
+    # text/plain, and some spam filters score harshly on multipart with no text
+    # alternative).
+    plain_body = notification.message
     if notification.link_url:
-        body = f"{body}\n\nLink: {notification.link_url}"
+        plain_body = f"{plain_body}\n\nLink: {notification.link_url}"
+
+    html_body = render_to_string(
+        "notifications/emails/notification.html",
+        {
+            "title": notification.title,
+            "message": notification.message,
+            "link_url": notification.link_url or "",
+            "is_important": notification.importance == Notification.Importance.IMPORTANT,
+        },
+    )
 
     try:
-        send_mail(
+        email = EmailMultiAlternatives(
             subject=f"[PFE Platform] {notification.title}",
-            message=body,
+            body=plain_body,
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[recipient_email],
-            fail_silently=False,
+            to=[recipient_email],
         )
+        email.attach_alternative(html_body, "text/html")
+        email.send(fail_silently=False)
     except Exception as exc:
         delivery.status = NotificationDelivery.Status.FAILED
         delivery.error_message = str(exc)

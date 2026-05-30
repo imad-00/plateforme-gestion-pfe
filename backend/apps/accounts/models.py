@@ -195,6 +195,16 @@ class ExternalSupervisorProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="external_supervisor_profile",
     )
+    # External supervisors are tied to a specific academic year — same rule as
+    # students. Nullable in the model so the migration succeeds on legacy rows;
+    # the AdminUserCreateSerializer enforces "must be the active year" on create.
+    academic_year = models.ForeignKey(
+        "academics.AcademicYear",
+        on_delete=models.SET_NULL,
+        related_name="external_supervisor_profiles",
+        null=True,
+        blank=True,
+    )
     organization = models.CharField(max_length=255, null=True, blank=True)
     job_title = models.CharField(max_length=255, null=True, blank=True)
     expertise_area = models.CharField(max_length=255, null=True, blank=True)

@@ -417,12 +417,14 @@ class NotificationService:
 
     @staticmethod
     def notify_defense_ready_to_schedule(defense, actor=None):
+        # IMPORTANT (was NORMAL) — gap-fill pass: admins should get the email
+        # because the workflow stalls if no admin sees the bell.
         return NotificationService.notify_many(
             NotificationService.get_platform_admin_recipients(),
             Notification.Type.DEFENSE_READY_TO_SCHEDULE,
             "Defense ready to schedule",
             f"Team {defense.team.name} is ready to schedule.",
-            Notification.Importance.NORMAL,
+            Notification.Importance.IMPORTANT,
             metadata={"defense_id": str(defense.pk), "team_code": defense.team_id},
             actor=actor,
             academic_year=defense.team.academic_year,
@@ -489,4 +491,355 @@ class NotificationService:
             metadata={"academic_year_id": academic_year.id, "status": academic_year.status},
             actor=actor,
             academic_year=academic_year,
+        )
+
+    # ─── 2026-05-30 gap-fill additions ───────────────────────────────────────
+
+    @staticmethod
+    def notify_team_invitation_rejected(participation, actor=None):
+        """When an invitee declines, tell the leader who sent the invite."""
+        leader = NotificationService.active_team_leader(participation.team)
+        if leader is None:
+            return []
+        invitee = participation.user
+        return NotificationService.notify_many(
+            [leader],
+            Notification.Type.TEAM_INVITATION_REJECTED,
+            "Team invitation declined",
+            f"{invitee.full_name or invitee.matricule} declined the invitation to team {participation.team.name}.",
+            Notification.Importance.NORMAL,
+            metadata={"team_code": participation.team_id, "participation_id": str(participation.pk)},
+            actor=actor,
+            academic_year=participation.team.academic_year,
+        )
+
+    @staticmethod
+    def notify_team_dissolved(team, recipients, actor=None):
+        """Admin dissolves a team — notify everyone who was on it."""
+        return NotificationService.notify_many(
+            recipients,
+            Notification.Type.TEAM_DISSOLVED,
+            "Team dissolved",
+            f"Team {team.name} was dissolved by an administrator.",
+            Notification.Importance.IMPORTANT,
+            metadata={"team_code": team.pk},
+            actor=actor,
+            academic_year=team.academic_year,
+        )
+
+    @staticmethod
+    def notify_team_supervisor_added(team, supervisor, actor=None):
+        """Admin adds a supervisor. Notify the supervisor (IMPORTANT — new
+        responsibility) and the team members (NORMAL — they want to know who's
+        watching their work)."""
+        notifications = []
+        notifications.extend(
+            NotificationService.notify_many(
+                [supervisor],
+                Notification.Type.TEAM_SUPERVISOR_ADDED,
+                "Added as supervisor",
+                f"You have been added as a supervisor to team {team.name}.",
+                Notification.Importance.IMPORTANT,
+                metadata={"team_code": team.pk, "supervisor_id": supervisor.id},
+                actor=actor,
+                academic_year=team.academic_year,
+            )
+        )
+        members = NotificationService.active_team_members(team)
+        if members:
+            notifications.extend(
+                NotificationService.notify_many(
+                    members,
+                    Notification.Type.TEAM_SUPERVISOR_ADDED,
+                    "New supervisor on your team",
+                    f"{supervisor.full_name or supervisor.matricule} is now a supervisor of team {team.name}.",
+                    Notification.Importance.NORMAL,
+                    metadata={"team_code": team.pk, "supervisor_id": supervisor.id},
+                    actor=actor,
+                    academic_year=team.academic_year,
+                )
+            )
+        return notifications
+
+    @staticmethod
+    def notify_team_supervisor_removed(team, supervisor, actor=None):
+        """Admin removes a supervisor from a team."""
+        return NotificationService.notify_many(
+            [supervisor],
+            Notification.Type.TEAM_SUPERVISOR_REMOVED,
+            "Removed as supervisor",
+            f"You were removed as a supervisor of team {team.name}.",
+            Notification.Importance.IMPORTANT,
+            metadata={"team_code": team.pk, "supervisor_id": supervisor.id},
+            actor=actor,
+            academic_year=team.academic_year,
+        )
+
+    @staticmethod
+    def notify_subject_pending_moderation(subject, actor=None):
+        """A teacher submitted a subject — admins should know there's pending
+        moderation work."""
+        return NotificationService.notify_many(
+            NotificationService.get_platform_admin_recipients(),
+            Notification.Type.SUBJECT_PENDING_MODERATION,
+            "Subject pending moderation",
+            f"A new subject is awaiting moderation: {subject.title}.",
+            Notification.Importance.NORMAL,
+            metadata={"subject_id": subject.id, "subject_code": subject.subject_code},
+            actor=actor,
+            academic_year=subject.academic_year,
+        )
+
+    @staticmethod
+    def notify_subject_archived(subject, actor=None):
+        """Admin archives a subject — confirm to the proposer."""
+        return NotificationService.notify_user(
+            subject.proposed_by,
+            Notification.Type.SUBJECT_ARCHIVED,
+            "Subject archived",
+            f"Your subject \"{subject.title}\" has been archived by an administrator.",
+            Notification.Importance.NORMAL,
+            metadata={"subject_id": subject.id, "subject_code": subject.subject_code},
+            actor=actor,
+            academic_year=subject.academic_year,
+        )
+
+    @staticmethod
+    def notify_subject_assigned_to_team(subject, team, actor=None):
+        """A subject was reserved for a team — tell the proposer they're now
+        an auto-supervisor."""
+        return NotificationService.notify_user(
+            subject.proposed_by,
+            Notification.Type.SUBJECT_ASSIGNED_TO_TEAM,
+            "Your subject was assigned",
+            f"Your subject \"{subject.title}\" has been assigned to team {team.name}. You are now a supervisor of that team.",
+            Notification.Importance.IMPORTANT,
+            metadata={"subject_id": subject.id, "team_code": team.pk},
+            actor=actor,
+            academic_year=subject.academic_year,
+        )
+
+    @staticmethod
+    def notify_defense_cancelled(defense, actor=None):
+        """A supervisor denied the defense — workflow cancelled. The leader
+        already got DEFENSE_SUPERVISOR_DENIED individually; this informs the
+        rest of the active team."""
+        leader = NotificationService.active_team_leader(defense.team)
+        leader_id = leader.id if leader else None
+        recipients = [
+            user for user in NotificationService.active_team_members(defense.team)
+            if user.id != leader_id
+        ]
+        if not recipients:
+            return []
+        return NotificationService.notify_many(
+            recipients,
+            Notification.Type.DEFENSE_CANCELLED,
+            "Defense cancelled",
+            f"The defense for team {defense.team.name} was cancelled because a supervisor declined the request.",
+            Notification.Importance.IMPORTANT,
+            metadata={"defense_id": str(defense.pk), "team_code": defense.team_id},
+            actor=actor,
+            academic_year=defense.team.academic_year,
+        )
+
+    @staticmethod
+    def notify_defense_jury_updated(defense, newly_assigned_users, actor=None):
+        """Admin updates the jury (post-scheduling) — notify the new jurors."""
+        if not newly_assigned_users:
+            return []
+        return NotificationService.notify_many(
+            newly_assigned_users,
+            Notification.Type.DEFENSE_JURY_UPDATED,
+            "Jury updated",
+            f"You have been added to the jury for team {defense.team.name}.",
+            Notification.Importance.IMPORTANT,
+            metadata={"defense_id": str(defense.pk), "team_code": defense.team_id},
+            actor=actor,
+            academic_year=defense.team.academic_year,
+        )
+
+    @staticmethod
+    def notify_defense_files_updated(defense, actor=None):
+        """Admin changed the attached files — jury should re-fetch."""
+        jury_users = [
+            assignment.user for assignment in defense.jury_assignments.select_related("user").all()
+        ]
+        if not jury_users:
+            return []
+        return NotificationService.notify_many(
+            jury_users,
+            Notification.Type.DEFENSE_FILES_UPDATED,
+            "Defense files updated",
+            f"The attached files for team {defense.team.name}'s defense were updated.",
+            Notification.Importance.NORMAL,
+            metadata={"defense_id": str(defense.pk), "team_code": defense.team_id},
+            actor=actor,
+            academic_year=defense.team.academic_year,
+        )
+
+    @staticmethod
+    def notify_academic_year_opened(academic_year, actor=None):
+        """A new academic year was created as ACTIVE — admins should know the
+        campaign is starting."""
+        return NotificationService.notify_many(
+            NotificationService.get_platform_admin_recipients(),
+            Notification.Type.ACADEMIC_YEAR_OPENED,
+            "Academic year opened",
+            f"A new academic year has been opened: {academic_year.year}.",
+            Notification.Importance.IMPORTANT,
+            metadata={"academic_year_id": academic_year.id},
+            actor=actor,
+            academic_year=academic_year,
+        )
+
+    # ─── Phase-audience map ─────────────────────────────────────────────────
+    # Per-phase recipient resolution. Used by all three phase notification
+    # methods so a single dict drives "who cares about this phase". Skipping
+    # ARCHIVE here — admin-only and already covered by year lifecycle events.
+    _PHASE_AUDIENCE_ROLES = {
+        "CAMPAIGN_SETUP": ("ADMIN",),
+        "SUBJECT_MANAGEMENT": ("TEACHER", "ADMIN"),
+        "TEAM_FORMATION": ("STUDENT",),
+        "WISHLIST_1": ("STUDENT",),
+        "WISHLIST_2": ("STUDENT",),
+        "ASSIGNMENT_REVIEW_1": ("ADMIN",),
+        "ASSIGNMENT_REVIEW_2": ("ADMIN",),
+        "RESULTS_AND_APPEALS": ("STUDENT", "ADMIN"),
+        "WORK_AND_SUPERVISION": ("STUDENT", "SUPERVISOR"),
+        "DEFENSE_WINDOW": ("STUDENT", "SUPERVISOR", "ADMIN"),
+    }
+
+    @staticmethod
+    def _resolve_phase_audience(phase):
+        """Walk the academic year for the right recipient set per phase."""
+        from apps.accounts.models import User
+        from apps.teams.models import TeamParticipant
+
+        roles = NotificationService._PHASE_AUDIENCE_ROLES.get(phase.phase_type, ())
+        recipients = []
+        if "ADMIN" in roles:
+            recipients.extend(NotificationService.get_platform_admin_recipients())
+        if "STUDENT" in roles:
+            recipients.extend(
+                User.objects.filter(
+                    business_identity=User.BusinessIdentity.STUDENT,
+                    student_profile__academic_year=phase.academic_year,
+                    account_status=User.AccountStatus.ACTIVE,
+                ).distinct()
+            )
+        if "TEACHER" in roles:
+            recipients.extend(
+                User.objects.filter(
+                    business_identity=User.BusinessIdentity.TEACHER,
+                    account_status=User.AccountStatus.ACTIVE,
+                ).distinct()
+            )
+        if "SUPERVISOR" in roles:
+            recipients.extend(
+                User.objects.filter(
+                    team_participations__role=TeamParticipant.Role.SUPERVISOR,
+                    team_participations__status=TeamParticipant.Status.ACTIVE,
+                    team_participations__team__academic_year=phase.academic_year,
+                    account_status=User.AccountStatus.ACTIVE,
+                ).distinct()
+            )
+        return recipients
+
+    @staticmethod
+    def _phase_label(phase):
+        return dict(
+            getattr(phase.__class__, "PhaseType").choices
+        ).get(phase.phase_type, phase.phase_type)
+
+    @staticmethod
+    def notify_phase_opened(phase, actor=None):
+        recipients = NotificationService._resolve_phase_audience(phase)
+        if not recipients:
+            return []
+        label = NotificationService._phase_label(phase)
+        return NotificationService.notify_many(
+            recipients,
+            Notification.Type.CAMPAIGN_PHASE_OPENED,
+            f"Phase opened: {label}",
+            f"The '{label}' phase is now open. Related actions are unblocked.",
+            Notification.Importance.NORMAL,
+            metadata={"phase_id": phase.id, "phase_type": phase.phase_type, "academic_year_id": phase.academic_year_id},
+            actor=actor,
+            academic_year=phase.academic_year,
+        )
+
+    @staticmethod
+    def notify_phase_closed(phase, actor=None):
+        recipients = NotificationService._resolve_phase_audience(phase)
+        if not recipients:
+            return []
+        label = NotificationService._phase_label(phase)
+        return NotificationService.notify_many(
+            recipients,
+            Notification.Type.CAMPAIGN_PHASE_CLOSED,
+            f"Phase closed: {label}",
+            f"The '{label}' phase has closed. Related actions are no longer available.",
+            Notification.Importance.NORMAL,
+            metadata={"phase_id": phase.id, "phase_type": phase.phase_type, "academic_year_id": phase.academic_year_id},
+            actor=actor,
+            academic_year=phase.academic_year,
+        )
+
+    @staticmethod
+    def notify_phase_closing_soon(phase):
+        """One-shot reminder fired by the Celery beat task. No actor — system."""
+        recipients = NotificationService._resolve_phase_audience(phase)
+        if not recipients:
+            return []
+        label = NotificationService._phase_label(phase)
+        return NotificationService.notify_many(
+            recipients,
+            Notification.Type.CAMPAIGN_PHASE_CLOSING_SOON,
+            f"Phase closing soon: {label}",
+            f"The '{label}' phase will close at {phase.end_at:%d %b %Y %H:%M}. Finish related actions before then.",
+            Notification.Importance.IMPORTANT,
+            metadata={"phase_id": phase.id, "phase_type": phase.phase_type, "end_at": phase.end_at.isoformat()},
+            actor=None,
+            academic_year=phase.academic_year,
+        )
+
+    @staticmethod
+    def notify_platform_grant_received(grant, actor=None):
+        """Super-admin granted ADMIN/SUPER_ADMIN to a user."""
+        return NotificationService.notify_user(
+            grant.user,
+            Notification.Type.PLATFORM_GRANT_RECEIVED,
+            "Platform access granted",
+            f"You have been granted {grant.access_level} access to the platform.",
+            Notification.Importance.IMPORTANT,
+            metadata={"grant_id": grant.id, "access_level": grant.access_level},
+            actor=actor,
+        )
+
+    @staticmethod
+    def notify_platform_grant_revoked(grant, actor=None):
+        """Super-admin revoked a platform grant."""
+        return NotificationService.notify_user(
+            grant.user,
+            Notification.Type.PLATFORM_GRANT_REVOKED,
+            "Platform access revoked",
+            f"Your {grant.access_level} access to the platform has been revoked.",
+            Notification.Importance.IMPORTANT,
+            metadata={"grant_id": grant.id, "access_level": grant.access_level},
+            actor=actor,
+        )
+
+    @staticmethod
+    def notify_password_changed(user):
+        """Self-notification after a successful password change. Security
+        confirmation so the user can react quickly if it wasn't them."""
+        return NotificationService.notify_user(
+            user,
+            Notification.Type.PASSWORD_CHANGED,
+            "Password changed",
+            "Your platform password was changed. If you didn't do this, contact an administrator immediately.",
+            Notification.Importance.IMPORTANT,
+            metadata={},
+            actor=user,
         )

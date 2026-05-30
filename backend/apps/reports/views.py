@@ -49,6 +49,12 @@ class BaseAcademicYearReportView(APIView):
         filename = ReportService.csv_filename_for(self.report_key, academic_year)
         return ReportService.build_csv_response(rows, self.columns, filename)
 
+    def get_xlsx_response(self, academic_year_id):
+        academic_year = self.get_academic_year(academic_year_id)
+        rows = self.get_rows(academic_year)
+        filename = ReportService.xlsx_filename_for(self.report_key, academic_year)
+        return ReportService.build_xlsx_response(rows, self.columns, filename)
+
 
 class DefenseReportView(BaseAcademicYearReportView):
     report_key = "defenses"
@@ -67,6 +73,12 @@ class DefenseReportCSVView(DefenseReportView):
     @extend_schema(tags=["Admin Reports"])
     def get(self, request, academic_year_id):
         return self.get_csv_response(academic_year_id)
+
+
+class DefenseReportXLSXView(DefenseReportView):
+    @extend_schema(tags=["Admin Reports"])
+    def get(self, request, academic_year_id):
+        return self.get_xlsx_response(academic_year_id)
 
 
 class TeamAssignmentReportView(BaseAcademicYearReportView):
@@ -88,6 +100,12 @@ class TeamAssignmentReportCSVView(TeamAssignmentReportView):
         return self.get_csv_response(academic_year_id)
 
 
+class TeamAssignmentReportXLSXView(TeamAssignmentReportView):
+    @extend_schema(tags=["Admin Reports"])
+    def get(self, request, academic_year_id):
+        return self.get_xlsx_response(academic_year_id)
+
+
 class StudentResultsReportView(BaseAcademicYearReportView):
     report_key = "student_results"
     columns = ReportService.STUDENT_RESULTS_REPORT_COLUMNS
@@ -107,6 +125,12 @@ class StudentResultsReportCSVView(StudentResultsReportView):
         return self.get_csv_response(academic_year_id)
 
 
+class StudentResultsReportXLSXView(StudentResultsReportView):
+    @extend_schema(tags=["Admin Reports"])
+    def get(self, request, academic_year_id):
+        return self.get_xlsx_response(academic_year_id)
+
+
 class JuryPlanningReportView(BaseAcademicYearReportView):
     report_key = "jury_planning"
     columns = ReportService.JURY_PLANNING_REPORT_COLUMNS
@@ -124,3 +148,9 @@ class JuryPlanningReportCSVView(JuryPlanningReportView):
     @extend_schema(tags=["Admin Reports"])
     def get(self, request, academic_year_id):
         return self.get_csv_response(academic_year_id)
+
+
+class JuryPlanningReportXLSXView(JuryPlanningReportView):
+    @extend_schema(tags=["Admin Reports"])
+    def get(self, request, academic_year_id):
+        return self.get_xlsx_response(academic_year_id)

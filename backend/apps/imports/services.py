@@ -26,7 +26,11 @@ class UserImportService:
     MAX_FILE_SIZE = 5 * 1024 * 1024
     DANGEROUS_PREFIXES = ("=", "+", "-", "@")
     STUDENT_REQUIRED = ["matricule", "email", "first_name", "last_name"]
-    STUDENT_COLUMNS = STUDENT_REQUIRED + ["moyenne_generale", "specialite", "academic_year"]
+    # academic_year is intentionally NOT a column. Imported students are always
+    # tied to the current ACTIVE year (per platform rule: students are scoped to
+    # the year they're created in). If a legacy template still includes the
+    # column, validate_student_row silently ignores it.
+    STUDENT_COLUMNS = STUDENT_REQUIRED + ["moyenne_generale", "specialite"]
     TEACHER_REQUIRED = ["matricule", "email", "first_name", "last_name"]
     TEACHER_COLUMNS = TEACHER_REQUIRED + ["grade", "departement"]
 
@@ -209,11 +213,9 @@ class UserImportService:
         cleaned, errors = UserImportService._validate_common_row(row, row_number, seen_matricules, seen_emails)
         annual_average = UserImportService._clean(row.get("moyenne_generale"))
         speciality = UserImportService._clean(row.get("specialite"))
-        academic_year_label = UserImportService._clean(row.get("academic_year"))
 
-        for field, value in {"specialite": speciality, "academic_year": academic_year_label}.items():
-            if value.startswith(UserImportService.DANGEROUS_PREFIXES):
-                errors.append(UserImportService._row_error(row_number, field, "SUSPICIOUS_VALUE", "Formula-like values are not allowed."))
+        if speciality.startswith(UserImportService.DANGEROUS_PREFIXES):
+            errors.append(UserImportService._row_error(row_number, "specialite", "SUSPICIOUS_VALUE", "Formula-like values are not allowed."))
 
         parsed_average = None
         if annual_average:
@@ -231,33 +233,27 @@ class UserImportService:
                     )
                 )
 
-        if academic_year_label:
-            academic_year = AcademicYear.objects.filter(year=academic_year_label).first()
-            if academic_year is None:
-                errors.append(UserImportService._row_error(row_number, "academic_year", "NOT_FOUND", "Academic year not found."))
-            elif academic_year.status != AcademicYear.Status.ACTIVE:
-                errors.append(
-                    UserImportService._row_error(
-                        row_number,
-                        "academic_year",
-                        "NOT_ACTIVE",
-                        "Student import academic year must be ACTIVE.",
-                    )
+        # The active academic year is the only one a student can be imported
+        # into — no per-row override. If a legacy template still includes an
+        # academic_year column, it is silently ignored.
+        academic_year = AcademicYear.objects.filter(status=AcademicYear.Status.ACTIVE).first()
+        if academic_year is None:
+            errors.append(
+                UserImportService._row_error(
+                    row_number,
+                    "academic_year",
+                    "NO_ACTIVE_YEAR",
+                    "No active academic year is configured.",
                 )
-        else:
-            academic_year = AcademicYear.objects.filter(status=AcademicYear.Status.ACTIVE).first()
-            if academic_year is None:
-                errors.append(
-                    UserImportService._row_error(row_number, "academic_year", "NO_ACTIVE_YEAR", "No active academic year is configured.")
-                )
+            )
 
         normalized = {
             **cleaned,
             "business_identity": User.BusinessIdentity.STUDENT,
             "annual_average": str(parsed_average) if parsed_average is not None else None,
             "speciality": speciality,
-            "academic_year_id": academic_year.id if "academic_year" in locals() and academic_year else None,
-            "academic_year": academic_year.year if "academic_year" in locals() and academic_year else "",
+            "academic_year_id": academic_year.id if academic_year else None,
+            "academic_year": academic_year.year if academic_year else "",
         }
         return normalized, errors
 

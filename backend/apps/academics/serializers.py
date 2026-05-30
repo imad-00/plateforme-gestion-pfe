@@ -1,7 +1,16 @@
-from django.db import IntegrityError
+from datetime import datetime, timezone as dt_timezone
+
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from apps.academics.models import AcademicYear
+
+
+# Sentinel start_at for auto-created phases. The phase exists so the admin can
+# schedule it, but is_open() returns False until the admin moves start_at into
+# the past. Choosing a far-future fixed timestamp keeps the row valid against
+# the NOT NULL constraint without surprising anyone with "phase opens in 1970".
+_PHASE_SENTINEL_START = datetime(2099, 12, 31, tzinfo=dt_timezone.utc)
 
 
 class AcademicYearSerializer(serializers.ModelSerializer):
@@ -49,13 +58,40 @@ class AcademicYearSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"status": "Only one academic year can be ACTIVE at a time."})
         return attrs
 
+    @transaction.atomic
     def create(self, validated_data):
         try:
-            return super().create(validated_data)
+            year = super().create(validated_data)
         except IntegrityError as exc:
             raise serializers.ValidationError(
                 {"status": "Only one academic year can be ACTIVE at a time."}
             ) from exc
+
+        # Phase types are an enum, not user-created. As soon as a year is ACTIVE,
+        # auto-create one record per PhaseType with a sentinel start (not yet
+        # open). The admin then reschedules + opens phases via PATCH.
+        if year.status == AcademicYear.Status.ACTIVE:
+            self._auto_create_phases(year)
+        return year
+
+    @staticmethod
+    def _auto_create_phases(year):
+        # Imported lazily to avoid a circular import at module load.
+        from apps.campaigns.models import CampaignPhase
+
+        existing = set(
+            CampaignPhase.objects.filter(academic_year=year).values_list("phase_type", flat=True)
+        )
+        for order, phase_type in enumerate(CampaignPhase.PhaseType.values, start=1):
+            if phase_type in existing:
+                continue
+            CampaignPhase.objects.create(
+                academic_year=year,
+                phase_type=phase_type,
+                start_at=_PHASE_SENTINEL_START,
+                end_at=None,
+                display_order=order,
+            )
 
     def update(self, instance, validated_data):
         try:
