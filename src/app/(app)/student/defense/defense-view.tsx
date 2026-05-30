@@ -45,16 +45,9 @@ import {
 } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+import { buildFileUrl } from '@/lib/config'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function buildFileUrl(path: string): string {
-  return path.startsWith('http') ? path : `${API_BASE}${path}`
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

@@ -1,6 +1,5 @@
+import { API_BASE } from '@/lib/config'
 import type { ApiError } from '@/lib/types'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 // ─── Error class ──────────────────────────────────────────────────────────────
 
@@ -137,6 +136,57 @@ function bodyInit(body: unknown): BodyInit | undefined {
   return JSON.stringify(body)
 }
 
+// Binary fetch + browser-download trigger used by report exports. The standard
+// api.get pipeline calls res.json() which would choke on CSV/XLSX bodies, so
+// this helper goes around it while still using the same JWT + refresh plumbing.
+async function fetchBinary(path: string): Promise<Blob> {
+  const token = _auth?.getAccessToken() ?? null
+  const headers = new Headers()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const run = async (authHeader: string | null): Promise<Response> => {
+    const h = new Headers(headers)
+    if (authHeader) h.set('Authorization', authHeader)
+    return fetch(`${API_BASE}${path}`, { method: 'GET', headers: h })
+  }
+
+  let res = await run(token ? `Bearer ${token}` : null)
+  if (res.status === 401) {
+    try {
+      const newToken = await doRefresh()
+      res = await run(`Bearer ${newToken}`)
+    } catch {
+      _auth?.logout()
+      throw new ApiClientError(401, { detail: 'Session expired. Please log in again.' })
+    }
+  }
+  if (!res.ok) {
+    // For binary endpoints the body is usually empty or text — surface a
+    // structured error so callers can show a useful message.
+    let detail = `Request failed with status ${res.status}`
+    try {
+      const text = await res.text()
+      if (text) detail = text
+    } catch {
+      /* ignore */
+    }
+    throw new ApiClientError(res.status, { detail })
+  }
+  return res.blob()
+}
+
+async function downloadFile(path: string, filename: string): Promise<void> {
+  const blob = await fetchBinary(path)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   get: <T>(path: string) =>
     apiClient<T>(path, { method: 'GET' }),
@@ -149,4 +199,6 @@ export const api = {
 
   delete: <T>(path: string) =>
     apiClient<T>(path, { method: 'DELETE' }),
+
+  download: downloadFile,
 }

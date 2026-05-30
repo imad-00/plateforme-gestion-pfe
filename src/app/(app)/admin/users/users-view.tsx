@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   AlertCircle,
+  FileUp,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -25,6 +26,7 @@ import { DataTable, type Column } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { EmptyState } from '@/components/shared/empty-state'
+import Link from 'next/link'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import {
@@ -77,13 +79,17 @@ interface UserFormState {
   password: string
   business_identity: BusinessIdentity | ''
   account_status: AccountStatus | ''
-  // Student profile
-  academic_year: string
+  // Student profile (academic_year is omitted — backend auto-fills with the
+  // current ACTIVE year for STUDENT and EXTERNAL_SUPERVISOR identities).
   annual_average: string
   speciality: string
-  // Teacher / supervisor profile
+  // Teacher profile
   grade: string
   department: string
+  // External supervisor profile (year-scoped like student; auto-tied to active year)
+  organization: string
+  job_title: string
+  expertise_area: string
 }
 
 const EMPTY_FORM: UserFormState = {
@@ -94,11 +100,13 @@ const EMPTY_FORM: UserFormState = {
   password: '',
   business_identity: '',
   account_status: 'ACTIVE',
-  academic_year: '',
   annual_average: '',
   speciality: '',
   grade: '',
   department: '',
+  organization: '',
+  job_title: '',
+  expertise_area: '',
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -106,6 +114,7 @@ const EMPTY_FORM: UserFormState = {
 function userToForm(u: User): UserFormState {
   const sp = u.student_profile
   const tp = u.teacher_profile
+  const ep = u.external_supervisor_profile
   return {
     matricule: u.matricule,
     email: u.email,
@@ -114,11 +123,13 @@ function userToForm(u: User): UserFormState {
     password: '',
     business_identity: u.business_identity,
     account_status: u.account_status,
-    academic_year: sp?.academic_year != null ? String(sp.academic_year) : '',
     annual_average: sp?.annual_average ?? '',
     speciality: sp?.speciality ?? sp?.specialite ?? '',
     grade: tp?.grade ?? '',
     department: tp?.department ?? tp?.departement ?? '',
+    organization: ep?.organization ?? '',
+    job_title: ep?.job_title ?? '',
+    expertise_area: ep?.expertise_area ?? '',
   }
 }
 
@@ -132,20 +143,25 @@ function buildUserBody(form: UserFormState, isEdit = false): Record<string, unkn
     account_status: form.account_status,
   }
   if (!isEdit || form.password) body.password = form.password
+  // STUDENT and EXTERNAL_SUPERVISOR are year-scoped — the backend auto-fills
+  // academic_year with the current ACTIVE year, so we never send it.
   if (form.business_identity === 'STUDENT') {
     body.student_profile = {
-      academic_year: form.academic_year ? Number(form.academic_year) : null,
       annual_average: form.annual_average || null,
       speciality: form.speciality || null,
     }
   }
-  if (
-    form.business_identity === 'TEACHER' ||
-    form.business_identity === 'EXTERNAL_SUPERVISOR'
-  ) {
+  if (form.business_identity === 'TEACHER') {
     body.teacher_profile = {
       grade: form.grade || null,
       department: form.department || null,
+    }
+  }
+  if (form.business_identity === 'EXTERNAL_SUPERVISOR') {
+    body.external_supervisor_profile = {
+      organization: form.organization || null,
+      job_title: form.job_title || null,
+      expertise_area: form.expertise_area || null,
     }
   }
   return body
@@ -303,18 +319,10 @@ function UserFormFields({ form, onChange, isEdit = false }: UserFormFieldsProps)
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Student Profile
           </p>
+          <p className="text-xs text-muted-foreground">
+            Automatically tied to the current active academic year.
+          </p>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="uf-acad-year">Academic Year ID</Label>
-              <Input
-                id="uf-acad-year"
-                type="number"
-                min={1}
-                placeholder="e.g. 1"
-                value={form.academic_year}
-                onChange={e => onChange({ academic_year: e.target.value })}
-              />
-            </div>
             <div className="space-y-1.5">
               <Label htmlFor="uf-speciality">Speciality</Label>
               <Input
@@ -323,25 +331,24 @@ function UserFormFields({ form, onChange, isEdit = false }: UserFormFieldsProps)
                 onChange={e => onChange({ speciality: e.target.value })}
               />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="uf-avg">Annual Average</Label>
-            <Input
-              id="uf-avg"
-              placeholder="e.g. 15.50"
-              value={form.annual_average}
-              onChange={e => onChange({ annual_average: e.target.value })}
-            />
+            <div className="space-y-1.5">
+              <Label htmlFor="uf-avg">Annual Average</Label>
+              <Input
+                id="uf-avg"
+                placeholder="e.g. 15.50"
+                value={form.annual_average}
+                onChange={e => onChange({ annual_average: e.target.value })}
+              />
+            </div>
           </div>
         </div>
       )}
 
-      {/* Teacher / supervisor profile */}
-      {(form.business_identity === 'TEACHER' ||
-        form.business_identity === 'EXTERNAL_SUPERVISOR') && (
+      {/* Teacher profile */}
+      {form.business_identity === 'TEACHER' && (
         <div className="space-y-3 rounded-lg border border-border p-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {form.business_identity === 'TEACHER' ? 'Teacher Profile' : 'Supervisor Profile'}
+            Teacher Profile
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -360,6 +367,44 @@ function UserFormFields({ form, onChange, isEdit = false }: UserFormFieldsProps)
                 onChange={e => onChange({ department: e.target.value })}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* External supervisor profile */}
+      {form.business_identity === 'EXTERNAL_SUPERVISOR' && (
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            External Supervisor Profile
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Automatically tied to the current active academic year.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="uf-org">Organization</Label>
+              <Input
+                id="uf-org"
+                value={form.organization}
+                onChange={e => onChange({ organization: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="uf-job">Job title</Label>
+              <Input
+                id="uf-job"
+                value={form.job_title}
+                onChange={e => onChange({ job_title: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="uf-expertise">Expertise area</Label>
+            <Input
+              id="uf-expertise"
+              value={form.expertise_area}
+              onChange={e => onChange({ expertise_area: e.target.value })}
+            />
           </div>
         </div>
       )}
@@ -754,6 +799,12 @@ export function UsersView() {
         description="Manage platform users and access grants."
         action={
           <div className="flex items-center gap-2">
+            <Link href="/admin/imports">
+              <Button variant="outline" size="sm">
+                <FileUp className="size-4" />
+                Bulk import
+              </Button>
+            </Link>
             {isSuperAdmin && (
               <Button variant="outline" size="sm" onClick={() => setCreateAdminOpen(true)}>
                 <Shield className="size-4" />

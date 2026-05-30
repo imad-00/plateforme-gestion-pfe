@@ -3,16 +3,20 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  Archive,
   Award,
   BookMarked,
   BookOpen,
   CalendarDays,
   Eye,
+  FileBarChart,
   Gavel,
   GraduationCap,
+  Hourglass,
   Landmark,
   LayoutDashboard,
   ListChecks,
+  ScrollText,
   Upload,
   UserCog,
   Users,
@@ -39,6 +43,9 @@ interface NavItem {
   // When true, the entry only renders if the user currently has ≥1 jury
   // assignment (used for /jury/defenses).
   requiresJury?: boolean
+  // When true, the entry only renders for SUPER_ADMIN platform grants. ADMIN-
+  // only grants don't qualify. Used for the lifecycle + audit log pages.
+  requiresSuperAdmin?: boolean
 }
 
 const NAV_STUDENT: NavItem[] = [
@@ -68,12 +75,16 @@ const NAV_EXTERNAL: NavItem[] = [
 const NAV_ADMIN: NavItem[] = [
   { href: '/admin',                label: 'Dashboard',      icon: LayoutDashboard, exact: true },
   { href: '/admin/users',          label: 'Users',          icon: UserCog    },
-  { href: '/admin/academic-years', label: 'Academic Years', icon: CalendarDays },
+  { href: '/admin/academic-years', label: 'Academic Year',  icon: CalendarDays },
+  { href: '/admin/history',        label: 'History',        icon: Archive    },
   { href: '/admin/subjects',       label: 'Subjects',       icon: BookOpen   },
   { href: '/admin/teams',          label: 'Teams',          icon: Users      },
   { href: '/admin/assignments',    label: 'Assignments',    icon: ListChecks },
   { href: '/admin/defenses',       label: 'Defenses',       icon: Landmark   },
-  { href: '/jury/defenses',        label: 'Jury',           icon: Gavel,    requiresJury: true },
+  { href: '/admin/reports',        label: 'Reports',        icon: FileBarChart },
+  { href: '/admin/lifecycle',      label: 'Lifecycle',      icon: Hourglass,   requiresSuperAdmin: true },
+  { href: '/admin/audit',          label: 'Audit log',      icon: ScrollText,  requiresSuperAdmin: true },
+  { href: '/jury/defenses',        label: 'Jury',           icon: Gavel,       requiresJury: true },
 ]
 
 function getNavItems(user: User): NavItem[] {
@@ -111,9 +122,11 @@ export function Sidebar() {
 
   const openPhases = new Set(campaignApi.data?.open_phases ?? [])
   const hasJuryAssignments = (juryApi.data?.count ?? 0) > 0
+  const isSuperAdmin = user.platform_access_level === 'SUPER_ADMIN'
   const items = getNavItems(user).filter(item => {
     if (item.requiresPhase && !openPhases.has(item.requiresPhase)) return false
     if (item.requiresJury && !hasJuryAssignments) return false
+    if (item.requiresSuperAdmin && !isSuperAdmin) return false
     return true
   })
 

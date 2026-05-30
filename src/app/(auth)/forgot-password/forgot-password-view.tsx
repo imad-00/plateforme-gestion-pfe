@@ -16,9 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { API_BASE } from '@/lib/config'
 import { cn } from '@/lib/utils'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 type Step = 'request' | 'verify' | 'confirm' | 'done'
 
@@ -365,7 +364,7 @@ export function ForgotPasswordView() {
                 </Button>
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Didn't receive it?</span>
+                  <span className="text-muted-foreground">Didn&apos;t receive it?</span>
                   <button
                     type="button"
                     onClick={onResend}

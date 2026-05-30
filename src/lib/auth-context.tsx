@@ -10,11 +10,11 @@ import {
 } from 'react'
 import { useRouter } from 'next/navigation'
 import { registerAuth } from '@/lib/api-client'
+import { API_BASE } from '@/lib/config'
 import type { LoginResponse, User } from '@/lib/types'
 
 const REFRESH_KEY = 'gradex_refresh'
 const SESSION_COOKIE = 'gradex_session'
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 // ─── Context shape ────────────────────────────────────────────────────────────
 

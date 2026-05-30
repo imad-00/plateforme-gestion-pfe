@@ -11,7 +11,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { api, ApiClientError } from '@/lib/api-client'
+import { api } from '@/lib/api-client'
 import { useApi } from '@/hooks/use-api'
 import type { StudentDashboard } from '@/lib/types'
 import { PageHeader } from '@/components/layout/page-header'
@@ -22,15 +22,6 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { EmptyState } from '@/components/shared/empty-state'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function extractMessage(err: unknown): string {
-  if (err instanceof ApiClientError) {
-    const d = err.data as Record<string, unknown>
-    const first = Object.values(d).flat().find(v => typeof v === 'string')
-    return (first as string | undefined) ?? err.message
-  }
-  return err instanceof Error ? err.message : 'An unexpected error occurred.'
-}
 
 function InlineError({ message }: { message: string }) {
   return (

@@ -12,6 +12,133 @@ This file is the **guide and blocknote** for frontend work. Whenever something i
 
 Newest entries on top.
 
+### 2026-05-30 — Email notifications activated
+
+The notification email path was 90% built by Sprint 11 backend but never actually fired in dev — `config/settings/local.py` hardcoded `EMAIL_BACKEND` to console, overriding `.env`. This pass unblocks real SMTP sends, adds an HTML email template, and adds a one-click verification tool for admins.
+
+**Backend**:
+- **`config/settings/local.py`** — replaced the unconditional console override with `EMAIL_FORCE_CONSOLE` env flag. When unset/0, `EMAIL_BACKEND` from `.env` is honored (typically `smtp.EmailBackend`). When 1, console output is forced. Default behavior: SMTP.
+- **`backend/.env.example`** — documented the new `EMAIL_FORCE_CONSOLE=0` knob alongside the existing SMTP block.
+- **HTML email template** `apps/notifications/templates/notifications/emails/notification.html` — institutional-blue header, IMPORTANT pill, message body (preserves line breaks), CTA button when `link_url` is set, plain-text footer. Inline styles only (no external CSS — email clients strip stylesheets).
+- **`apps/notifications/tasks.py::send_notification_email`** — rewritten to use `EmailMultiAlternatives` with both plain-text and HTML alternatives. Plain text remains the fallback for clients that only render text/plain (also good for spam-filter scoring). Existing SENT / FAILED / SKIPPED state machine unchanged.
+- **`AdminTestEmailView`** at `POST /api/admin/notifications/test-email/` — bypasses Celery and the Notification pipeline. Sends a one-shot verification email synchronously to the calling admin's address via the same HTML template. Returns 200 with the recipient on success or 502 with the SMTP error on failure. Useful to prove SMTP is wired up after env tweaks without faking a workflow event.
+- **`apps/notifications/admin_urls.py`** — new file, mounts the test-email view at `/api/admin/`.
+
+**Frontend**:
+- **`/admin` dashboard** — new "System diagnostics" section below "Quick actions", containing a Send test email card. On click: spinner + inline success badge with the recipient address, or a red error block with the SMTP message. Only visible on the admin dashboard so it stays out of normal workflow surfaces.
+
+**Activation steps for the next dev who pulls this**:
+1. Make sure `backend/.env` has `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS=1`, `DEFAULT_FROM_EMAIL=...`
+2. Optionally `EMAIL_FORCE_CONSOLE=1` if you want zero real sends in offline dev
+3. `docker compose up -d` — ensure both `web` and `worker` containers are running (Celery picks up the queue)
+4. Sign in as admin, go to `/admin`, click **Send test email** — verify it lands in your inbox
+5. Real workflow events with `importance=IMPORTANT` will now also deliver via SMTP through the Celery worker
+
+**Quality gates**: `tsc --noEmit` ✅, `npm run lint` ✅.
+
+### 2026-05-30 — Sprint Frontend-8 (Single-active-year + History + auto-phases) shipped
+
+Constraint pass driven by a deep re-read of the platform's year/phase semantics. The frontend now structurally enforces "one ACTIVE year, all actions scoped to it" everywhere — paired with backend changes that auto-create phase records, tie external supervisors to a year, and drop the per-row year override from student imports.
+
+**Backend additions**:
+- **`ExternalSupervisorProfile.academic_year` FK** (`apps/accounts/models.py`) — nullable on the model so the migration succeeds on legacy rows, required at the serializer layer for new creations. Mirrors `StudentProfile.academic_year`. Migration: `0011_externalsupervisorprofile_academic_year.py`.
+- **`ExternalSupervisorProfileAdminSerializer`** + wiring into `AdminUserCreateUpdateSerializer` (`apps/accounts/admin_serializers.py`). `_sync_profiles` now branches into a 4th identity arm (`EXTERNAL_SUPERVISOR`) and auto-fills `academic_year` with the active year — same pattern as students. Cross-identity payload-leak guards updated to be symmetric (STUDENT/TEACHER/EXTERNAL_SUPERVISOR each reject the others' profile blocks).
+- **`UserSerializer`** (the `/api/auth/me/` one) gains `external_supervisor_profile` for read-back consistency.
+- **Phase auto-creation on year activation** (`apps/academics/serializers.py`). `AcademicYearSerializer.create()` now wraps in `transaction.atomic` and calls `_auto_create_phases(year)` when status is ACTIVE. Each of the 11 `PhaseType` enum values gets a record with `start_at = 2099-12-31 UTC` (sentinel — not open) and `end_at = None`. `display_order` follows enum order. Existing phases are not duplicated (`get_or_create`-style check on `(year, phase_type)`).
+- **Student import drops `academic_year` column** (`apps/imports/services.py`). `STUDENT_COLUMNS` no longer lists it; `validate_student_row` ignores any leftover legacy value and always uses the current ACTIVE year. The template generator therefore no longer emits the column either — admins can't accidentally specify the wrong year.
+
+**Frontend additions**:
+- **Types** (`lib/types.ts`): new `ExternalSupervisorProfile` interface + new `external_supervisor_profile` field on `User`.
+- **`/admin/academic-years` restructured** — `(app)/admin/academic-years/academic-years-view.tsx` rewritten from ~925 lines down to ~520. Now exclusively the **current active year workspace**:
+  - Year list is gone — only the ACTIVE year (one card) is shown.
+  - "Open new year" button shown only when no ACTIVE year exists AND the caller is SUPER_ADMIN.
+  - Year creation dialog drops the status select — new years are always created as ACTIVE (the precondition matches the button-visibility rule).
+  - Year edit form no longer touches `status` — lifecycle owns it.
+  - Tabs: "Current year" + "Campaign phases" (no more year picker dropdown on phases).
+  - **Phases tab** renders all 11 `PhaseType` values as a fixed list (matches the backend enum). Each row shows: phase name, computed open/closed/scheduled badge, start_at → end_at, plus **Open now** / **Close now** / **Schedule** quick actions. No "New phase" button — phase types are an enum, not user input. Quick actions PATCH `start_at` (open) or `end_at` (close) to `now`; Schedule opens a datetime-local dialog.
+- **New `/admin/history` page** — `(app)/admin/history/{page.tsx,history-view.tsx}`. Read-only list of CLOSED + ARCHIVED years. Each row shows year code/label/dates + a **Reports** shortcut (deep-links `/admin/reports?year=<id>`) and an expandable **Phases** snapshot (renders the phase records sorted by `display_order`, all read-only). Empty state when nothing has been closed/archived yet.
+- **`/admin/users` form rewrites** for year-scoped identities:
+  - `UserFormState` dropped `academic_year` and split `organization` / `job_title` / `expertise_area` out of the shared "teacher" block.
+  - `buildUserBody` now emits `external_supervisor_profile` (not `teacher_profile`) for EXTERNAL_SUPERVISOR identity. No `academic_year` in either profile payload — backend fills.
+  - The Student Profile and External Supervisor Profile blocks both show "Automatically tied to the current active academic year." inline.
+  - External Supervisor block uses the actual model fields (organization / job_title / expertise_area), not the old leaky teacher-grade fields.
+- **`/admin/imports`** — added a note under the Students template download link: "Students are always imported into the current active academic year. The template no longer includes an academic year column."
+- **`/admin/lifecycle`** — Reopen button now disables when another year is already ACTIVE, with an inline helper line ("Cannot reopen — another academic year is already active. Close it first."). Mirrors the backend rule rather than only learning on submit.
+- **Sidebar**: renamed "Academic Years" → "Academic Year" (singular reflects the new structure) and added a "History" entry with the Archive icon, directly below it.
+- **Imports relocated** (UX consolidation, same day): dropped the standalone "Imports" sidebar entry. Added a **Bulk import** button to the `/admin/users` page action area, between "New Admin" and "New User". The `/admin/imports` route still exists as the destination; the imports page gained a "← Users" back link at the top and the title was renamed to "Bulk import users". Rationale: bulk import is just another way to create users, so it belongs next to the single-user create button rather than as a separate top-level concept. The flow has three phases (upload → preview → success) with potentially-dense per-row error output, so a dialog would have been cramped — keeping the route preserves the spacious workspace while still surfacing the entry point where admins look for it.
+
+**Constraints now structurally enforced (instead of just by 400-on-submit)**:
+- Only one ACTIVE year exists at any time → frontend hides the "Open new year" button when one exists.
+- Phases are an enum → frontend has no "create phase" form; admin only schedules existing rows.
+- Phase management is locked to the ACTIVE year → no year picker on the phases tab.
+- Closed/archived years are read-only and live on a separate surface → `/admin/history`.
+- Students and external supervisors are year-scoped at creation → forms don't expose the year input; backend auto-fills with the ACTIVE year.
+- Admins can't reopen a closed year while another is ACTIVE → button gated client-side.
+- Teachers + admin staff are year-independent → no profile-year linkage in their forms; backend doesn't write one.
+
+**Quality gates**: `tsc --noEmit` ✅, `npm run lint` ✅ (clean), `npm run build` ✅.
+
+### 2026-05-29 — Sprint Frontend-7 (Hardening & Polish) shipped
+
+The runway to soutenance. Pure housekeeping — no new features. After this pass the codebase is lint-clean, build-clean, containerised, MinIO URLs work in the browser, and there's a demo script.
+
+**Consolidation**:
+- New `lib/config.ts` exports `API_BASE` and `buildFileUrl(path)`. Replaces 9 `const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'` declarations (auth-context, api-client, forgot-password-view, supervision-view, deliverables-view, student-defense-view, defense-requests-view, admin-defense-detail-view, jury-defense-detail-view) and 6 inline `buildFileUrl` copies. Single source of truth for runtime config.
+
+**Lint zero**:
+- `admin-dashboard-view.tsx`, `student-dashboard-view.tsx`, `teacher-dashboard-view.tsx` — dropped dead `extractMessage` helpers + unused `ApiClientError` imports (these views catch via `useApi.error` which already has a string).
+- `results-view.tsx` — dropped unused `Loader2` import.
+- `deliverables-view.tsx` + `supervision-view.tsx` — `"{file.comment}"` → `&ldquo;{file.comment}&rdquo;` for `react/no-unescaped-entities`.
+- `forgot-password-view.tsx` — `Didn't` → `Didn&apos;t`.
+- `teams-view.tsx` `TeamDetailDialog` — restructured the manual `useEffect + fetch + setState` dance into a `useApi<Team | null>` call with a conditional fetcher (returns `Promise.resolve(null)` when closed). Fixes the `react-hooks/set-state-in-effect` error and shrinks the component.
+- Result: `npm run lint` produces zero errors and zero warnings.
+
+**MinIO fix**:
+- Bucket policy in `docker-compose.yml` flipped from `mc anonymous set private` to `mc anonymous set download` — anonymous GET succeeds for any object key. Writes still require AWS keys.
+- `backend/config/settings/base.py` gained an `AWS_S3_CUSTOM_DOMAIN` block: when `MINIO_PUBLIC_ENDPOINT` env var is set, browser-facing URLs use it (`localhost:9000/pfe-media`) while Django uploads continue to use the internal `MINIO_ENDPOINT` (`minio:9000`). Closes the internal/external hostname mismatch that was breaking file downloads in the browser.
+- `backend/.env.example` gained `MINIO_PUBLIC_ENDPOINT=localhost:9000`.
+
+**Containerisation**:
+- New `plateform-frontend/Dockerfile` — multi-stage (deps → builder → runner) using `node:20-alpine`. Builder stage gets `NEXT_PUBLIC_API_URL` via `ARG` so it bakes into the client bundle. Runner stage copies only `.next/standalone` + `.next/static` + `public` — image stays tiny.
+- New `plateform-frontend/.dockerignore` — excludes `node_modules`, `.next`, `.env*` (except `.env.example`), git/log noise.
+- `next.config.ts` — added `output: "standalone"`. Required for the Dockerfile copy strategy.
+- `docker-compose.yml` — new `frontend` service with `args.NEXT_PUBLIC_API_URL` passed through from the host env (defaults to `http://localhost:8000`). Ports `3000:3000`. Depends on `web`.
+
+**Demo material**:
+- New top-level `DEMO.md` — a 25-min walkthrough covering the full campaign flow (login → users/imports → academic year → subjects → teams → wishlists → assignment + appeals → deliverables → defense + jury + PV → lifecycle + reports + audit → notifications + dashboards). Includes a Q&A section with the four most likely jury questions.
+
+**Quality gates after pass**:
+- `npx tsc --noEmit` exit 0.
+- `npm run lint` exit 0 (zero errors, zero warnings).
+- `npm run build` produces all routes, no warnings.
+
+**Decisions captured**:
+- MinIO chose `download` (public read on the bucket) over signed URLs or a Django proxy. Reasoning: deliverables and PVs are institutional outputs, not personal data, and signed URLs trip on the internal/external endpoint mismatch. Documented in DEMO.md Q&A.
+- Frontend `output: "standalone"` over `next start` directly. Standalone is the Next.js-recommended Docker pattern — smaller image, no need to ship node_modules.
+
+### 2026-05-29 — Sprint Frontend-6 (Lifecycle + Reports + Imports + Audit) shipped + XLSX backend
+
+Shipped as a single PR-shaped pass per the plan. All four admin/super-admin surfaces consume already-complete backend sprints (9, 10, 13) with one backend addition for Excel exports.
+
+**Backend additions**:
+- 4 new XLSX report endpoints mirror the CSV ones — `apps/reports/services.py` gained `to_xlsx`, `build_xlsx_response`, `xlsx_filename_for` (uses the already-installed `openpyxl 3.1.5` from `requirements.txt`). 4 new view classes (`DefenseReportXLSXView` etc.) + 4 new URL paths (`…/defenses.xlsx` etc.). Re-uses the existing column constants and row serializers — zero duplication.
+
+**Frontend additions**:
+- **Types** in `lib/types.ts`: `LifecycleEventType`, `AdminActor` (reused across lifecycle + audit), `LifecycleEvent`, `ClosureReadinessIssue`, `ClosureReadiness`, `LifecycleActionResponse`, `CloseAndArchiveResponse`, `ReportEnvelope<TRow>`, 4 report row interfaces (`DefenseReportRow`, `TeamAssignmentReportRow`, `StudentResultReportRow`, `JuryPlanningReportRow`), `ImportType`, `ImportStatus`, `ImportRowError`, `UserImportBatch`, `ImportConfirmCreatedUser`, `ImportConfirmResponse`, `AuditActionType` (22-member union mirroring `apps/audit/models.py`), `AuditLogEntry`.
+- **`api.download(path, filename)`** added to `lib/api-client.ts`. Handles JWT-authenticated binary fetches with a manual single-flight refresh retry, blobs the response, triggers a programmatic `<a download>` click. Used by reports CSV/XLSX downloads and the import template download. Means the existing `api.get` JSON parser stays focused; binary stays out of its happy path.
+- **`/admin/reports`** — `(app)/admin/reports/{page.tsx,reports-view.tsx}`. Year picker (defaults to ACTIVE) + 4 tabs (Defenses & PVs, Team assignments, Student results, Jury planning). Each tab uses a generic `ReportPanel<TRow>` that fetches the JSON preview, renders client-side paginated `DataTable`, and exposes CSV + Excel download buttons that go through `api.download`. Empty state per report. Column definitions hardcoded from the backend `_REPORT_COLUMNS` constants.
+- **`/admin/lifecycle`** — `(app)/admin/lifecycle/{page.tsx,lifecycle-view.tsx}` (SUPER_ADMIN-only via sidebar + view guard). Year picker + three cards: **Actions** (status-gated buttons — `ACTIVE`: Close / Force close / Close & archive; `CLOSED`: Reopen / Archive; `ARCHIVED`: no-op notice), **Closure readiness** (top-level "Can close normally" / "Force close only" badge, summary stat grid, blocking issues + warnings collapsible per-issue with affected IDs, expandable "would-suspend-on-archive" entity list), **Event timeline** (vertical timeline with icon per `LifecycleEventType`, performed_by + reason + collapsible metadata JSON). One shared `LifecycleActionDialog` parameterised by action — reason textarea + understand-checkbox + destructive styling for force-close / archive / combo. Posts to the matching endpoint and refetches readiness + events + the years list on success.
+- **`/admin/imports`** — `(app)/admin/imports/{page.tsx,imports-view.tsx}`. Three-phase state machine (`upload` → `preview` → `success`) modelled as a discriminated union. Upload phase: type picker (Students/Teachers), template download via `api.download`, file dropzone accepting `.csv,.xlsx`, posts multipart to `…/preview/`. Preview phase: total/valid/invalid counters, `IssueGroup` rendering errors/warnings grouped by row (file-level errors bubble to the top), strict vs allow-partial confirm with a checkbox, posts to `…/confirm/`. Success phase: counters + collapsible created-users list + restart button. Uses backend's row-level `{row, field, code, message}` error shape — no client-side parsing.
+- **`/admin/audit`** — `(app)/admin/audit/{page.tsx,audit-view.tsx}` (SUPER_ADMIN-only). Five filters: action type (22-member union, "All" default), target model (hardcoded common set), actor (reuses `UserPicker` for search-as-you-type), date from / date to (datetime-local inputs). `DataTable` columns: timestamp, actor, action, target, plus an expand chevron. Selected row expands below the table showing IP address, user agent, and pretty-printed metadata JSON. Filter changes reset page to 1 inline (no `useEffect` setState bounce).
+- **Sidebar**: `NavItem` gained `requiresSuperAdmin?: boolean`. Four new admin entries — Reports + Imports (regular admin), Lifecycle + Audit log (super-admin only). The existing `requiresPhase` + `requiresJury` flags stay; the filter now does all three checks in one pass.
+
+**Verified**: `npx tsc --noEmit` exit 0. ESLint clean on every new file.
+
+**Decisions captured**:
+- Lifecycle is a dedicated page (not a tab inside `/admin/academic-years`) because its blast radius is high — separating destructive year-ending work from routine year/phase CRUD prevents accidental clicks.
+- Reports paginate client-side because the backend returns the full result set in one envelope. Cheap for institutional volumes (hundreds of rows per report).
+- Audit `target_model` filter is a hardcoded list of known model strings — the backend accepts arbitrary strings, so when new admin hooks land the list needs an addition. Documented at the top of `audit-view.tsx`.
+
 ### 2026-05-29 — Sprint Frontend-5c (Defenses: jury surface + PV upload) shipped + 5b admin-files backend gap closed
 
 **Backend addition (driven by frontend need)**: `GET /api/admin/teams/<team_code>/files/` added in `apps/deliverables/views.py` (`AdminTeamFileListView`) and mounted via a new `apps/deliverables/admin_urls.py`. Permission: `IsAdminOrSuperAdmin`. Standard `page` / `page_size` pagination. Closes the 5b deferred gap — admins can now pick from a team's existing deliverable files when editing defense attachments.
@@ -992,25 +1119,26 @@ Split into three passes because the surface spans four roles and 17 endpoints.
 
 **Sprint 5 = ✅ COMPLETE.** All four roles covered, all 17 backend endpoints consumed, plus one new admin endpoint for parity. Phase gating throughout: all operational actions require `DEFENSE_WINDOW`. Admin list remains visible outside the window for historical reads; only the action buttons gate. Per product rule: when phase is closed (or for students, no validated team / no subject), the entire feature surface is hidden — no enumeration of unmet preconditions.
 
-### Sprint Frontend-6 — Lifecycle, Reports, Imports, Audit
+### Sprint Frontend-6 — Lifecycle, Reports, Imports, Audit — ✅ DONE (2026-05-29)
 
-Batched because all four share the same admin/super-admin patterns — sidebar entries under a single "Administration" or "Operations" section.
+Shipped in one pass. Four admin/super-admin surfaces + Excel export.
 
-- **Year Lifecycle** (`/admin/lifecycle`, SUPER_ADMIN only): closure readiness check → close (normal/force) → reopen → archive. Lifecycle event timeline per year.
-- **Reports** (`/admin/reports`): four report previews (JSON in `DataTable`) with "Download CSV" buttons.
-- **Bulk Imports** (`/admin/imports`): file upload → preview table with row-level errors → "Confirm" button. Template download links.
-- **Audit Log** (`/admin/audit`, SUPER_ADMIN only): paginated `DataTable` with filter by action type + actor + date range.
+- **Year Lifecycle** (`/admin/lifecycle`, SUPER_ADMIN only): readiness panel + 5 actions (close / force-close / reopen / archive / close-and-archive) + lifecycle event timeline.
+- **Reports** (`/admin/reports`): four tabs with paginated JSON previews + CSV + Excel downloads.
+- **Bulk Imports** (`/admin/imports`): upload → preview (row-level errors grouped) → confirm (strict or allow-partial) → success summary.
+- **Audit Log** (`/admin/audit`, SUPER_ADMIN only): paginated `DataTable` with action / target / actor / date range filters + expandable metadata.
+- **Backend addition**: 4 XLSX report endpoints using already-installed `openpyxl`.
 
-### Sprint Frontend-7 — Hardening & Polish
+### Sprint Frontend-7 — Hardening & Polish — ✅ DONE (2026-05-29)
 
-Buffer sprint:
-- Fix MinIO public URL (settings or proxy view)
-- Containerise frontend, add to `docker-compose.yml`
-- Consolidate the 5 `API_BASE` declarations
-- Add `.env.example` for the frontend
-- UI consistency pass: every page matches Style Guide
-- `npm run build` produces zero warnings/errors
-- Demo / soutenance scenario walkthrough
+- **Config consolidation**: `lib/config.ts` replaces 9 `API_BASE` + 6 `buildFileUrl` duplicates.
+- **Lint zero**: 10 pre-existing problems fixed (unused imports, unescaped entities, set-state-in-effect refactored to `useApi`).
+- **MinIO browser URLs**: bucket policy `download` + `AWS_S3_CUSTOM_DOMAIN` via new `MINIO_PUBLIC_ENDPOINT` env var.
+- **Frontend container**: multi-stage `Dockerfile` (deps → builder → runner) using `output: "standalone"`, wired into `docker-compose.yml` as the `frontend` service. New `.dockerignore` + `.env.example`.
+- **Demo script**: `DEMO.md` at repo root — 25-min walkthrough + Q&A.
+- **Quality gates**: `tsc --noEmit` ✅, `npm run lint` ✅, `npm run build` ✅ all clean.
+
+**All sprints (Frontend 1–7) shipped.** The platform is demo-ready.
 
 ---
 

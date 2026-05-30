@@ -23,20 +23,13 @@ import type {
 import { PageHeader } from '@/components/layout/page-header'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { UploadPVDialog } from '@/components/shared/upload-pv-dialog'
+import { buildFileUrl } from '@/lib/config'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function buildFileUrl(path: string): string {
-  return path.startsWith('http') ? path : `${API_BASE}${path}`
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

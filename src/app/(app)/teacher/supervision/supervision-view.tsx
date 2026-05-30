@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { api, ApiClientError } from '@/lib/api-client'
+import { buildFileUrl } from '@/lib/config'
 import { useApi } from '@/hooks/use-api'
 import type {
   DeliverableFile,
@@ -42,8 +43,6 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-
 const REVIEW_OPTIONS: { value: ReviewStatus; label: string }[] = [
   { value: 'ACCEPTED', label: 'Accepted' },
   { value: 'NEEDS_REVISION', label: 'Needs Revision' },
@@ -51,10 +50,6 @@ const REVIEW_OPTIONS: { value: ReviewStatus; label: string }[] = [
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function buildFileUrl(path: string): string {
-  return path.startsWith('http') ? path : `${API_BASE}${path}`
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -238,7 +233,7 @@ function SupervisorFileCard({
 
           {/* ── Upload comment ── */}
           {file.comment && (
-            <p className="text-sm italic text-muted-foreground">"{file.comment}"</p>
+            <p className="text-sm italic text-muted-foreground">&ldquo;{file.comment}&rdquo;</p>
           )}
 
           {/* ── Existing review ── */}

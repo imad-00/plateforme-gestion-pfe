@@ -75,6 +75,13 @@ export interface TeacherProfile {
   departement: string | null
 }
 
+export interface ExternalSupervisorProfile {
+  academic_year: number | null
+  organization: string | null
+  job_title: string | null
+  expertise_area: string | null
+}
+
 export interface User {
   id: number
   matricule: string
@@ -86,6 +93,7 @@ export interface User {
   platform_access_level: PlatformAccessLevel | null
   student_profile: StudentProfile | null
   teacher_profile: TeacherProfile | null
+  external_supervisor_profile: ExternalSupervisorProfile | null
   // absent from login response, present on admin user detail
   created_at?: string
   updated_at?: string
@@ -669,6 +677,243 @@ export interface DefenseDetail extends Omit<DefenseListItem, 'requested_by' | 's
   attached_files: DefenseAttachedFile[]
   supervisor_decisions: DefenseSupervisorDecision[]
   jury_assignments: DefenseJuryAssignment[]
+}
+
+// ─── Lifecycle (Sprint 9 backend) ────────────────────────────────────────────
+
+export type LifecycleEventType = 'CLOSED' | 'FORCE_CLOSED' | 'REOPENED' | 'ARCHIVED'
+
+// Reused by audit log entries too — same actor shape.
+export interface AdminActor {
+  id: number
+  matricule: string
+  email: string
+  full_name: string
+}
+
+export interface LifecycleEvent {
+  id: number
+  academic_year: number
+  event_type: LifecycleEventType
+  performed_by: AdminActor
+  performed_at: string
+  reason: string
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// Each blocker/warning carries a `code` plus zero or more entity-id lists. The
+// backend emits at most one list type per issue but we widen to optional for
+// every possible payload so rendering can stay generic.
+export interface ClosureReadinessIssue {
+  code: string
+  message?: string
+  team_codes?: string[]
+  defense_ids?: string[]
+  appeal_ids?: string[]
+  phase_ids?: number[]
+  subject_ids?: number[]
+  file_ids?: string[]
+}
+
+export interface ClosureReadiness {
+  academic_year: { id: number; year: string; status: AcademicYearStatus }
+  can_close_normally: boolean
+  can_force_close: boolean
+  blocking_issues: ClosureReadinessIssue[]
+  warnings: ClosureReadinessIssue[]
+  summary: {
+    teams_by_status: Record<string, number>
+    defenses_by_status: Record<string, number>
+    subjects_by_status: Record<string, number>
+    appeals_pending: number
+    open_phases: number
+  }
+  affected_entities: {
+    forming_team_codes: string[]
+    locked_team_codes: string[]
+    validated_without_completed_defense_team_codes: string[]
+    students_linked: number[]
+    external_supervisors_linked: number[]
+    students_that_would_be_suspended_on_archive: number[]
+    external_supervisors_that_would_be_suspended_on_archive: number[]
+  }
+}
+
+export interface LifecycleActionResponse {
+  academic_year: AcademicYear
+  event: LifecycleEvent
+  readiness?: ClosureReadiness
+}
+
+export interface CloseAndArchiveResponse {
+  academic_year: AcademicYear
+  close_event: LifecycleEvent | null
+  archive_event: LifecycleEvent
+  readiness: ClosureReadiness
+}
+
+// ─── Reports (Sprint 10 backend) ──────────────────────────────────────────────
+
+export interface ReportEnvelope<TRow> {
+  academic_year: { id: number; year: string; status: AcademicYearStatus }
+  count: number
+  results: TRow[]
+}
+
+// All report row fields come back as strings (the backend formats decimals,
+// datetimes, and joined lists into strings before serializing).
+export interface DefenseReportRow {
+  defense_id: string
+  defense_status: string
+  team_code: string
+  team_name: string
+  subject_title: string
+  subject_type: string
+  supervisors: string
+  jury_president: string
+  jury_examiners: string
+  jury_guests: string
+  scheduled_at: string
+  location: string
+  final_grade: string
+  deliberation: string
+  pv_uploaded_at: string
+  pv_uploaded_by: string
+  pv_file_url_or_name: string
+}
+
+export interface TeamAssignmentReportRow {
+  team_code: string
+  team_name: string
+  team_status: string
+  selection_round: string
+  annual_average: string
+  students: string
+  leader: string
+  supervisors: string
+  subject_title: string
+  subject_type: string
+  subject_status: string
+  subject_proposed_by: string
+  assignment_status: string
+}
+
+export interface StudentResultReportRow {
+  student_matricule: string
+  student_full_name: string
+  student_email: string
+  account_status: string
+  academic_year: string
+  team_code: string
+  team_name: string
+  team_status: string
+  team_role: string
+  subject_title: string
+  subject_type: string
+  defense_status: string
+  final_grade: string
+  pv_uploaded_at: string
+  result_status: string
+}
+
+export interface JuryPlanningReportRow {
+  scheduled_at: string
+  location: string
+  defense_status: string
+  team_code: string
+  team_name: string
+  subject_title: string
+  president: string
+  examiners: string
+  guests: string
+  supervisors: string
+  final_grade: string
+  pv_uploaded: string
+}
+
+// ─── Imports (Sprint 13 backend) ──────────────────────────────────────────────
+
+export type ImportType = 'STUDENTS' | 'TEACHERS'
+export type ImportStatus = 'PREVIEWED' | 'COMPLETED' | 'FAILED' | 'EXPIRED'
+
+export interface ImportRowError {
+  row: number | null      // null marks whole-file errors (size, headers, format)
+  field: string | null
+  code: string            // REQUIRED / EXISTS / DUPLICATE_IN_FILE / INVALID_EMAIL / SUSPICIOUS_VALUE / NOT_FOUND / ...
+  message: string
+}
+
+export interface UserImportBatch {
+  id: number
+  import_type: ImportType
+  status: ImportStatus
+  original_filename: string
+  total_rows: number
+  valid_rows: number
+  invalid_rows: number
+  errors: ImportRowError[]
+  warnings: ImportRowError[]
+  created_count: number
+  skipped_count: number
+  created_at: string
+  completed_at: string | null
+}
+
+export interface ImportConfirmCreatedUser {
+  id: number
+  matricule: string
+  email: string
+  full_name?: string
+}
+
+export interface ImportConfirmResponse {
+  batch: UserImportBatch
+  created_count: number
+  skipped_count: number
+  error_count: number
+  created_users: ImportConfirmCreatedUser[]
+}
+
+// ─── Audit log (Sprint 13 backend) ────────────────────────────────────────────
+
+export type AuditActionType =
+  | 'USER_IMPORT_PREVIEWED'
+  | 'USER_IMPORT_COMPLETED'
+  | 'USER_CREATED_BY_IMPORT'
+  | 'ACADEMIC_YEAR_CLOSED'
+  | 'ACADEMIC_YEAR_FORCE_CLOSED'
+  | 'ACADEMIC_YEAR_REOPENED'
+  | 'ACADEMIC_YEAR_ARCHIVED'
+  | 'USER_CREATED'
+  | 'USER_UPDATED'
+  | 'USER_ARCHIVED'
+  | 'PLATFORM_GRANT_CREATED'
+  | 'PLATFORM_GRANT_REVOKED'
+  | 'TEAM_ADMIN_MODIFIED'
+  | 'TEAM_DISSOLVED'
+  | 'SUBJECT_APPROVED'
+  | 'SUBJECT_REJECTED'
+  | 'ASSIGNMENT_RUN_BY_ADMIN'
+  | 'APPEAL_REVIEWED'
+  | 'DEFENSE_SCHEDULED'
+  | 'DEFENSE_RESCHEDULED'
+  | 'DEFENSE_JURY_UPDATED'
+  | 'DEFENSE_PV_UPLOADED'
+
+export interface AuditLogEntry {
+  id: number
+  actor: AdminActor
+  action_type: AuditActionType
+  target_model: string
+  target_id: string
+  target_repr: string
+  occurred_at: string
+  metadata: Record<string, unknown>
+  ip_address: string
+  user_agent: string
+  created_at: string
 }
 
 // ─── Auth responses ───────────────────────────────────────────────────────────

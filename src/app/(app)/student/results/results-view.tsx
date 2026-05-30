@@ -5,7 +5,6 @@ import {
   AlertCircle,
   BookOpen,
   Clock,
-  Loader2,
   MessageSquare,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'

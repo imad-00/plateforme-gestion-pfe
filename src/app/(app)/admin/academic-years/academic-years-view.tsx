@@ -1,7 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { AlertCircle, Calendar, CheckCircle2, Loader2, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  AlertCircle,
+  Calendar,
+  Edit3,
+  Loader2,
+  Lock,
+  Pencil,
+  PlayCircle,
+  Plus,
+  XCircle,
+} from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { api, ApiClientError } from '@/lib/api-client'
 import { useApi } from '@/hooks/use-api'
@@ -13,7 +23,6 @@ import type {
   PhaseType,
 } from '@/lib/types'
 import { StatusBadge } from '@/components/shared/status-badge'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { EmptyState } from '@/components/shared/empty-state'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
@@ -21,19 +30,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -67,22 +70,14 @@ const ALL_PHASE_TYPES: PhaseType[] = [
   'ARCHIVE',
 ]
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types & forms ────────────────────────────────────────────────────────────
 
 interface YearForm {
   year: string
   year_label: string
   start_date: string
   end_date: string
-  status: 'ACTIVE' | 'CLOSED'
   wishlist_size: string
-}
-
-interface PhaseForm {
-  phase_type: PhaseType | ''
-  start_at: string
-  end_at: string
-  display_order: string
 }
 
 const EMPTY_YEAR_FORM: YearForm = {
@@ -90,15 +85,7 @@ const EMPTY_YEAR_FORM: YearForm = {
   year_label: '',
   start_date: '',
   end_date: '',
-  status: 'CLOSED',
   wishlist_size: '5',
-}
-
-const EMPTY_PHASE_FORM: PhaseForm = {
-  phase_type: '',
-  start_at: '',
-  end_at: '',
-  display_order: '',
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -123,9 +110,17 @@ function toDateInput(iso: string | null | undefined): string {
   return iso.slice(0, 10)
 }
 
-function toDateTimeLocal(iso: string | null | undefined): string {
+// Convert an ISO datetime to the local-time value expected by datetime-local input.
+function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return ''
-  return iso.slice(0, 16)
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function fromLocalInput(local: string): string {
+  return new Date(local).toISOString()
 }
 
 function yearToForm(y: AcademicYear): YearForm {
@@ -134,51 +129,28 @@ function yearToForm(y: AcademicYear): YearForm {
     year_label: y.year_label,
     start_date: toDateInput(y.start_date),
     end_date: toDateInput(y.end_date),
-    status: y.status === 'ARCHIVED' ? 'CLOSED' : y.status,
     wishlist_size: String(y.wishlist_size),
   }
 }
 
-function phaseToForm(p: CampaignPhase): PhaseForm {
-  return {
-    phase_type: p.phase_type,
-    start_at: toDateTimeLocal(p.start_at),
-    end_at: toDateTimeLocal(p.end_at),
-    display_order: String(p.display_order),
-  }
-}
-
-function buildYearBody(form: YearForm): Record<string, unknown> {
-  return {
+function buildYearBody(form: YearForm, includeStatus: boolean): Record<string, unknown> {
+  const body: Record<string, unknown> = {
     year: form.year.trim(),
     year_label: form.year_label.trim(),
     start_date: form.start_date || null,
     end_date: form.end_date || null,
-    status: form.status,
     wishlist_size: Number(form.wishlist_size) || 5,
   }
-}
-
-function buildPhaseBody(form: PhaseForm, yearId: number): Record<string, unknown> {
-  return {
-    academic_year: yearId,
-    phase_type: form.phase_type,
-    start_at: form.start_at,
-    end_at: form.end_at || null,
-    display_order: form.display_order ? Number(form.display_order) : 0,
-  }
+  // On creation we always send status=ACTIVE — the only allowed value once the
+  // previous year is closed. On update we don't touch status (lifecycle owns it).
+  if (includeStatus) body.status = 'ACTIVE'
+  return body
 }
 
 function extractMessage(err: unknown): string {
-  if (err instanceof ApiClientError) {
-    const d = err.data as Record<string, unknown>
-    const first = Object.values(d).flat().find(v => typeof v === 'string')
-    return (first as string | undefined) ?? err.message
-  }
+  if (err instanceof ApiClientError) return err.message
   return err instanceof Error ? err.message : 'An unexpected error occurred.'
 }
-
-// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function InlineError({ message }: { message: string }) {
   return (
@@ -189,213 +161,116 @@ function InlineError({ message }: { message: string }) {
   )
 }
 
-function CardSkeleton() {
-  return (
-    <div className="space-y-3">
-      <Skeleton className="h-20 w-full rounded-xl" />
-      <Skeleton className="h-20 w-full rounded-xl" />
-      <Skeleton className="h-20 w-full rounded-xl" />
-    </div>
-  )
-}
-
 // ─── Year form fields ─────────────────────────────────────────────────────────
 
 function YearFormFields({
   form,
   onChange,
+  disabled,
 }: {
   form: YearForm
   onChange: (patch: Partial<YearForm>) => void
+  disabled: boolean
 }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="yr-code">Year Code</Label>
+          <Label htmlFor="yr-code">Year code</Label>
           <Input
             id="yr-code"
-            placeholder="2024-2025"
+            placeholder="2026-2027"
             value={form.year}
             onChange={e => onChange({ year: e.target.value })}
+            disabled={disabled}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="yr-label">Display Label</Label>
+          <Label htmlFor="yr-label">Display label</Label>
           <Input
             id="yr-label"
-            placeholder="Academic Year 2024-2025"
+            placeholder="Academic Year 2026-2027"
             value={form.year_label}
             onChange={e => onChange({ year_label: e.target.value })}
+            disabled={disabled}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="yr-start">Start Date</Label>
+          <Label htmlFor="yr-start">Start date</Label>
           <Input
             id="yr-start"
             type="date"
             value={form.start_date}
             onChange={e => onChange({ start_date: e.target.value })}
+            disabled={disabled}
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="yr-end">End Date</Label>
+          <Label htmlFor="yr-end">End date</Label>
           <Input
             id="yr-end"
             type="date"
             value={form.end_date}
             onChange={e => onChange({ end_date: e.target.value })}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label>Status</Label>
-          <Select
-            value={form.status}
-            onValueChange={v => onChange({ status: v as 'ACTIVE' | 'CLOSED' })}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ACTIVE">Active</SelectItem>
-              <SelectItem value="CLOSED">Closed</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="yr-wishlist">Wishlist Size</Label>
-          <Input
-            id="yr-wishlist"
-            type="number"
-            min={1}
-            max={20}
-            value={form.wishlist_size}
-            onChange={e => onChange({ wishlist_size: e.target.value })}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Phase form fields ────────────────────────────────────────────────────────
-
-function PhaseFormFields({
-  form,
-  onChange,
-  isEdit = false,
-}: {
-  form: PhaseForm
-  onChange: (patch: Partial<PhaseForm>) => void
-  isEdit?: boolean
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Label>Phase Type</Label>
-        {isEdit ? (
-          <Input
-            value={form.phase_type ? PHASE_LABELS[form.phase_type] : ''}
-            disabled
-          />
-        ) : (
-          <Select
-            value={form.phase_type}
-            onValueChange={v => onChange({ phase_type: v as PhaseType })}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select phase type…" />
-            </SelectTrigger>
-            <SelectContent>
-              {ALL_PHASE_TYPES.map(pt => (
-                <SelectItem key={pt} value={pt}>
-                  {PHASE_LABELS[pt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="ph-start">Start</Label>
-          <Input
-            id="ph-start"
-            type="datetime-local"
-            value={form.start_at}
-            onChange={e => onChange({ start_at: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ph-end">
-            End{' '}
-            <span className="font-normal text-muted-foreground">(optional)</span>
-          </Label>
-          <Input
-            id="ph-end"
-            type="datetime-local"
-            value={form.end_at}
-            onChange={e => onChange({ end_at: e.target.value })}
+            disabled={disabled}
           />
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="ph-order">Display Order</Label>
+        <Label htmlFor="yr-wishlist">Wishlist size</Label>
         <Input
-          id="ph-order"
+          id="yr-wishlist"
           type="number"
-          min={0}
-          placeholder="0"
-          value={form.display_order}
-          onChange={e => onChange({ display_order: e.target.value })}
+          min={1}
+          max={20}
+          value={form.wishlist_size}
+          onChange={e => onChange({ wishlist_size: e.target.value })}
+          disabled={disabled}
         />
       </div>
     </div>
   )
 }
 
-// ─── Year dialog ──────────────────────────────────────────────────────────────
+// ─── Year create/edit dialog ──────────────────────────────────────────────────
 
 function YearDialog({
-  mode,
-  year,
   open,
   onOpenChange,
+  initial,
   onSuccess,
 }: {
-  mode: 'create' | 'edit'
-  year?: AcademicYear
   open: boolean
   onOpenChange: (open: boolean) => void
+  initial: AcademicYear | null
   onSuccess: () => void
 }) {
+  const isEdit = initial !== null
   const [form, setForm] = useState<YearForm>(EMPTY_YEAR_FORM)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
-    setError(null)
-    setLoading(false)
-    setForm(mode === 'edit' && year ? yearToForm(year) : EMPTY_YEAR_FORM)
-  }, [open, mode, year])
+    if (open) {
+      setForm(initial ? yearToForm(initial) : EMPTY_YEAR_FORM)
+      setError(null)
+    }
+  }, [open, initial])
 
   async function handleSubmit() {
     setLoading(true)
     setError(null)
     try {
-      if (mode === 'edit' && year) {
-        await api.patch(`/api/admin/academic-years/${year.id}/`, buildYearBody(form))
+      if (isEdit && initial) {
+        await api.patch(`/api/admin/academic-years/${initial.id}/`, buildYearBody(form, false))
       } else {
-        await api.post('/api/admin/academic-years/', buildYearBody(form))
+        // New year is created as ACTIVE — the rule "only one ACTIVE" is the
+        // precondition for the button being shown at all (see AcademicYearsView).
+        await api.post('/api/admin/academic-years/', buildYearBody(form, true))
       }
       onSuccess()
       onOpenChange(false)
@@ -407,18 +282,18 @@ function YearDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={loading ? undefined : onOpenChange}>
+    <Dialog open={open} onOpenChange={open => !loading && onOpenChange(open)}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            {mode === 'edit' ? 'Edit Academic Year' : 'New Academic Year'}
-          </DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit academic year' : 'Open new academic year'}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? 'Update the year code, label, dates, or wishlist size. Status transitions go through the lifecycle workspace.'
+              : 'The new year is created as ACTIVE. All 11 campaign phases are auto-scheduled — you can then open or reschedule them individually.'}
+          </DialogDescription>
         </DialogHeader>
 
-        <YearFormFields
-          form={form}
-          onChange={patch => setForm(prev => ({ ...prev, ...patch }))}
-        />
+        <YearFormFields form={form} onChange={p => setForm(prev => ({ ...prev, ...p }))} disabled={loading} />
 
         {error && <InlineError message={error} />}
 
@@ -428,7 +303,7 @@ function YearDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={loading}>
             {loading && <Loader2 className="size-4 animate-spin" />}
-            {mode === 'edit' ? 'Save Changes' : 'Create'}
+            {isEdit ? 'Save' : 'Open year'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -436,489 +311,383 @@ function YearDialog({
   )
 }
 
-// ─── Phase dialog ─────────────────────────────────────────────────────────────
+// ─── Phase row ────────────────────────────────────────────────────────────────
 
-function PhaseDialog({
-  mode,
-  phase,
-  yearId,
-  open,
-  onOpenChange,
-  onSuccess,
+function PhaseRow({
+  phaseType,
+  record,
+  isOpen,
+  yearEditable,
+  onEdit,
+  onQuickAction,
 }: {
-  mode: 'create' | 'edit'
-  phase?: CampaignPhase
-  yearId: number
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSuccess: () => void
+  phaseType: PhaseType
+  record: CampaignPhase | undefined
+  isOpen: boolean
+  yearEditable: boolean
+  onEdit: (record: CampaignPhase) => void
+  onQuickAction: (record: CampaignPhase, action: 'open' | 'close') => void
 }) {
-  const [form, setForm] = useState<PhaseForm>(EMPTY_PHASE_FORM)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setError(null)
-    setLoading(false)
-    setForm(mode === 'edit' && phase ? phaseToForm(phase) : EMPTY_PHASE_FORM)
-  }, [open, mode, phase])
-
-  async function handleSubmit() {
-    setLoading(true)
-    setError(null)
-    try {
-      if (mode === 'edit' && phase) {
-        await api.patch(`/api/admin/campaign-phases/${phase.id}/`, buildPhaseBody(form, yearId))
-      } else {
-        await api.post('/api/admin/campaign-phases/', buildPhaseBody(form, yearId))
-      }
-      onSuccess()
-      onOpenChange(false)
-    } catch (err) {
-      setError(extractMessage(err))
-    } finally {
-      setLoading(false)
-    }
+  if (!record) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium text-foreground">{PHASE_LABELS[phaseType]}</p>
+            <p className="text-xs text-muted-foreground">Not yet provisioned.</p>
+          </div>
+          {isOpen ? <StatusBadge status="ACTIVE" label="Open" /> : (
+            <span className="text-xs text-muted-foreground">Auto-creates on next year activation.</span>
+          )}
+        </CardContent>
+      </Card>
+    )
   }
 
-  return (
-    <Dialog open={open} onOpenChange={loading ? undefined : onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{mode === 'edit' ? 'Edit Phase' : 'Add Phase'}</DialogTitle>
-        </DialogHeader>
-
-        <PhaseFormFields
-          form={form}
-          onChange={patch => setForm(prev => ({ ...prev, ...patch }))}
-          isEdit={mode === 'edit'}
-        />
-
-        {error && <InlineError message={error} />}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading && <Loader2 className="size-4 animate-spin" />}
-            {mode === 'edit' ? 'Save Changes' : 'Add Phase'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ─── Year card ────────────────────────────────────────────────────────────────
-
-function YearCard({
-  year,
-  onEdit,
-  onActivate,
-  onArchive,
-}: {
-  year: AcademicYear
-  onEdit: (y: AcademicYear) => void
-  onActivate: (y: AcademicYear) => void
-  onArchive: (y: AcademicYear) => void
-}) {
-  const isArchived = year.status === 'ARCHIVED'
+  const now = new Date()
+  const start = record.start_at ? new Date(record.start_at) : null
+  const end = record.end_at ? new Date(record.end_at) : null
+  const hasOpened = start !== null && start <= now
+  const hasClosed = end !== null && end <= now
+  const canOpenNow = yearEditable && !record.is_archived && !isOpen
+  const canCloseNow = yearEditable && !record.is_archived && isOpen
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm font-semibold text-foreground">{year.year}</span>
-            <StatusBadge status={year.status} />
+            <p className="font-medium text-foreground">{PHASE_LABELS[phaseType]}</p>
+            {isOpen ? (
+              <StatusBadge status="ACTIVE" label="Open" />
+            ) : hasClosed ? (
+              <StatusBadge status="CLOSED" label="Closed" />
+            ) : hasOpened ? (
+              <StatusBadge status="CLOSED" label="Ended" />
+            ) : (
+              <StatusBadge status="PENDING" label="Scheduled" />
+            )}
+            {record.is_archived && <StatusBadge status="ARCHIVED" />}
           </div>
-          <p className="text-sm text-foreground">{year.year_label}</p>
           <p className="text-xs text-muted-foreground">
-            {formatDate(year.start_date)} → {formatDate(year.end_date)}
-            {' · '}Wishlist size: {year.wishlist_size}
+            {start ? formatDateTime(record.start_at) : '—'} → {end ? formatDateTime(record.end_at) : 'open-ended'}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {!isArchived && (
-            <Button variant="ghost" size="sm" onClick={() => onEdit(year)}>
-              Edit
-            </Button>
-          )}
-          {year.status === 'CLOSED' && (
-            <Button variant="outline" size="sm" onClick={() => onActivate(year)}>
-              Set Active
-            </Button>
-          )}
-          {!isArchived && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-status-error-fg hover:text-status-error-fg"
-              onClick={() => onArchive(year)}
-            >
-              Archive
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ─── Phase card ───────────────────────────────────────────────────────────────
-
-function PhaseCard({
-  phase,
-  openPhases,
-  onEdit,
-  onArchive,
-}: {
-  phase: CampaignPhase
-  openPhases: PhaseType[]
-  onEdit: (p: CampaignPhase) => void
-  onArchive: (p: CampaignPhase) => void
-}) {
-  const isOpen = openPhases.includes(phase.phase_type)
-  const isArchived = phase.is_archived
-
-  return (
-    <Card className={isArchived ? 'opacity-60' : undefined}>
-      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-foreground">
-              {PHASE_LABELS[phase.phase_type]}
-            </span>
-            {isOpen && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-status-success-border bg-status-success-bg px-2 py-0.5 text-xs font-medium text-status-success-fg">
-                <CheckCircle2 className="size-3" />
-                Open
-              </span>
+        {yearEditable && !record.is_archived && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {canOpenNow && (
+              <Button size="sm" onClick={() => onQuickAction(record, 'open')}>
+                <PlayCircle className="size-3.5" />
+                Open now
+              </Button>
             )}
-            {isArchived && <StatusBadge status="ARCHIVED" />}
-          </div>
-          <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="size-3" />
-              {formatDateTime(phase.start_at)}
-            </span>
-            {phase.end_at && (
-              <span>→ {formatDateTime(phase.end_at)}</span>
+            {canCloseNow && (
+              <Button size="sm" variant="outline" onClick={() => onQuickAction(record, 'close')}>
+                <XCircle className="size-3.5" />
+                Close now
+              </Button>
             )}
-          </p>
-        </div>
-
-        {!isArchived && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => onEdit(phase)}>
-              Edit
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-status-error-fg hover:text-status-error-fg"
-              onClick={() => onArchive(phase)}
-            >
-              Archive
+            <Button size="sm" variant="ghost" onClick={() => onEdit(record)}>
+              <Edit3 className="size-3.5" />
+              Schedule
             </Button>
           </div>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ─── Phase schedule dialog ────────────────────────────────────────────────────
+
+function PhaseScheduleDialog({
+  open,
+  onOpenChange,
+  record,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  record: CampaignPhase | null
+  onSuccess: () => void
+}) {
+  const [startAt, setStartAt] = useState('')
+  const [endAt, setEndAt] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open && record) {
+      setStartAt(toLocalInput(record.start_at))
+      setEndAt(toLocalInput(record.end_at))
+      setError(null)
+    }
+  }, [open, record])
+
+  if (!record) return null
+
+  async function handleSubmit() {
+    if (!startAt) {
+      setError('Start date is required.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      await api.patch(`/api/admin/campaign-phases/${record!.id}/`, {
+        start_at: fromLocalInput(startAt),
+        end_at: endAt ? fromLocalInput(endAt) : null,
+      })
+      onSuccess()
+      onOpenChange(false)
+    } catch (err) {
+      setError(extractMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={open => !loading && onOpenChange(open)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Schedule phase</DialogTitle>
+          <DialogDescription>
+            Set when this phase opens and (optionally) when it closes. Leave end date blank
+            for an open-ended phase.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <p className="text-sm text-foreground">
+            {PHASE_LABELS[record.phase_type]}
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="ps-start">Start at</Label>
+            <Input
+              id="ps-start"
+              type="datetime-local"
+              value={startAt}
+              onChange={e => setStartAt(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ps-end">End at <span className="font-normal text-muted-foreground">(optional)</span></Label>
+            <Input
+              id="ps-end"
+              type="datetime-local"
+              value={endAt}
+              onChange={e => setEndAt(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          {error && <InlineError message={error} />}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={loading || !startAt}>
+            {loading && <Loader2 className="size-4 animate-spin" />}
+            Save schedule
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export function AcademicYearsView() {
-  useAuth()
+  const { user } = useAuth()
+  const isSuperAdmin = user?.platform_access_level === 'SUPER_ADMIN'
 
-  // ── Years state ────────────────────────────────────────────────────────────
-  const [includeArchived, setIncludeArchived] = useState(false)
-  const [createYearOpen, setCreateYearOpen] = useState(false)
-  const [editYear, setEditYear] = useState<AcademicYear | null>(null)
-  const [archiveYear, setArchiveYear] = useState<AcademicYear | null>(null)
-  const [archiveYearLoading, setArchiveYearLoading] = useState(false)
-  const [archiveYearError, setArchiveYearError] = useState<string | null>(null)
-  const [activateYear, setActivateYear] = useState<AcademicYear | null>(null)
-  const [activateLoading, setActivateLoading] = useState(false)
-  const [activateError, setActivateError] = useState<string | null>(null)
-
-  // ── Phases state ───────────────────────────────────────────────────────────
-  const [selectedYearId, setSelectedYearId] = useState<string>('')
-  const [createPhaseOpen, setCreatePhaseOpen] = useState(false)
-  const [editPhase, setEditPhase] = useState<CampaignPhase | null>(null)
-  const [archivePhase, setArchivePhase] = useState<CampaignPhase | null>(null)
-  const [archivePhaseLoading, setArchivePhaseLoading] = useState(false)
-  const [archivePhaseError, setArchivePhaseError] = useState<string | null>(null)
-
-  // ── Data ───────────────────────────────────────────────────────────────────
-  // Fetch all years (including archived) once; filter client-side for Tab 1
   const yearsApi = useApi<PaginatedResponse<AcademicYear>>(
-    () => api.get('/api/admin/academic-years/?page_size=100&include_archived=true'),
+    () => api.get('/api/admin/academic-years/?page_size=100'),
     [],
   )
+  const campaignApi = useApi<CampaignStatus>(() => api.get('/api/campaign/current/'), [])
+
+  // ── Active year ────────────────────────────────────────────────────────────
+  const allYears = yearsApi.data?.results ?? []
+  const activeYear = allYears.find(y => y.status === 'ACTIVE') ?? null
 
   const phasesApi = useApi<PaginatedResponse<CampaignPhase>>(
     () =>
-      selectedYearId
-        ? api.get(`/api/admin/campaign-phases/?academic_year=${selectedYearId}&page_size=100`)
-        : Promise.resolve<PaginatedResponse<CampaignPhase>>({
-            count: 0, next: null, previous: null, results: [],
-          }),
-    [selectedYearId],
+      activeYear
+        ? api.get(`/api/admin/campaign-phases/?academic_year=${activeYear.id}&page_size=100`)
+        : Promise.resolve<PaginatedResponse<CampaignPhase>>({ count: 0, next: null, previous: null, results: [] }),
+    [activeYear?.id],
   )
 
-  const campaignApi = useApi<CampaignStatus>(() => api.get('/api/campaign/current/'), [])
+  // ── Dialog state ───────────────────────────────────────────────────────────
+  const [yearDialog, setYearDialog] = useState<{ open: boolean; initial: AcademicYear | null }>({
+    open: false,
+    initial: null,
+  })
+  const [phaseDialog, setPhaseDialog] = useState<{ open: boolean; record: CampaignPhase | null }>({
+    open: false,
+    record: null,
+  })
+  const [actionError, setActionError] = useState<string | null>(null)
 
-  // Auto-select the active year when data first loads
-  useEffect(() => {
-    if (selectedYearId || !yearsApi.data) return
-    const all = yearsApi.data.results
-    const active = all.find(y => y.status === 'ACTIVE')
-    const first = all.find(y => y.status !== 'ARCHIVED')
-    const pick = active ?? first
-    if (pick) setSelectedYearId(String(pick.id))
-  }, [yearsApi.data, selectedYearId])
-
-  // ── Actions ────────────────────────────────────────────────────────────────
-  async function handleArchiveYear() {
-    if (!archiveYear) return
-    setArchiveYearLoading(true)
-    setArchiveYearError(null)
-    try {
-      await api.post(`/api/admin/academic-years/${archiveYear.id}/archive/`, {})
-      setArchiveYear(null)
-      yearsApi.refetch()
-    } catch (err) {
-      setArchiveYearError(extractMessage(err))
-    } finally {
-      setArchiveYearLoading(false)
+  // Map phase_type → record so the fixed 11-row list can render even when the
+  // backend hasn't provisioned every type (e.g. partial test data).
+  const phasesByType = useMemo(() => {
+    const m = new Map<PhaseType, CampaignPhase>()
+    for (const p of phasesApi.data?.results ?? []) {
+      m.set(p.phase_type, p)
     }
-  }
+    return m
+  }, [phasesApi.data])
 
-  async function handleActivateYear() {
-    if (!activateYear) return
-    setActivateLoading(true)
-    setActivateError(null)
-    try {
-      await api.patch(`/api/admin/academic-years/${activateYear.id}/`, { status: 'ACTIVE' })
-      setActivateYear(null)
-      yearsApi.refetch()
-    } catch (err) {
-      setActivateError(extractMessage(err))
-    } finally {
-      setActivateLoading(false)
-    }
-  }
+  const openPhaseTypes = new Set(campaignApi.data?.open_phases ?? [])
 
-  async function handleArchivePhase() {
-    if (!archivePhase) return
-    setArchivePhaseLoading(true)
-    setArchivePhaseError(null)
+  async function handlePhaseQuickAction(record: CampaignPhase, action: 'open' | 'close') {
+    setActionError(null)
     try {
-      await api.post(`/api/admin/campaign-phases/${archivePhase.id}/archive/`, {})
-      setArchivePhase(null)
+      const nowIso = new Date().toISOString()
+      if (action === 'open') {
+        // Open the phase: move start_at to now and clear any past end_at.
+        const body: Record<string, string | null> = { start_at: nowIso }
+        if (record.end_at && new Date(record.end_at) <= new Date()) body.end_at = null
+        await api.patch(`/api/admin/campaign-phases/${record.id}/`, body)
+      } else {
+        await api.patch(`/api/admin/campaign-phases/${record.id}/`, { end_at: nowIso })
+      }
       phasesApi.refetch()
+      campaignApi.refetch()
     } catch (err) {
-      setArchivePhaseError(extractMessage(err))
-    } finally {
-      setArchivePhaseLoading(false)
+      setActionError(extractMessage(err))
     }
   }
-
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const allYears = yearsApi.data?.results ?? []
-  const visibleYears = includeArchived ? allYears : allYears.filter(y => y.status !== 'ARCHIVED')
-  const selectableYears = allYears.filter(y => y.status !== 'ARCHIVED')
-  const phases = phasesApi.data?.results ?? []
-  const openPhases = campaignApi.data?.open_phases ?? []
-  const selectedYearNum = Number(selectedYearId) || 0
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
       <PageHeader
         title="Academic Years"
-        description="Manage academic years and campaign phases."
-      />
-
-      <Tabs defaultValue="years">
-        <TabsList className="mb-6">
-          <TabsTrigger value="years">Academic Years</TabsTrigger>
-          <TabsTrigger value="phases">Campaign Phases</TabsTrigger>
-        </TabsList>
-
-        {/* ── Tab 1: Academic Years ── */}
-        <TabsContent value="years">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
-              <input
-                type="checkbox"
-                checked={includeArchived}
-                onChange={e => setIncludeArchived(e.target.checked)}
-                className="size-4 rounded border-border accent-primary"
-              />
-              Show archived
-            </label>
-            <Button size="sm" onClick={() => setCreateYearOpen(true)}>
+        description="Manage the current academic year and its campaign phases. Closed and archived years live in the History workspace."
+        action={
+          isSuperAdmin && !activeYear ? (
+            <Button onClick={() => setYearDialog({ open: true, initial: null })}>
               <Plus className="size-4" />
-              New Year
+              Open new year
             </Button>
-          </div>
+          ) : undefined
+        }
+      />
 
-          {yearsApi.isLoading ? (
-            <CardSkeleton />
-          ) : yearsApi.error ? (
-            <InlineError message={yearsApi.error} />
-          ) : visibleYears.length === 0 ? (
-            <EmptyState
-              icon={Calendar}
-              title="No academic years"
-              description="Create your first academic year to get started."
-            />
-          ) : (
-            <div className="space-y-3">
-              {visibleYears.map(y => (
-                <YearCard
-                  key={y.id}
-                  year={y}
-                  onEdit={setEditYear}
-                  onActivate={yr => { setActivateError(null); setActivateYear(yr) }}
-                  onArchive={yr => { setArchiveYearError(null); setArchiveYear(yr) }}
-                />
-              ))}
-            </div>
-          )}
-        </TabsContent>
+      {actionError && <div className="mb-4"><InlineError message={actionError} /></div>}
 
-        {/* ── Tab 2: Campaign Phases ── */}
-        <TabsContent value="phases">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-muted-foreground shrink-0">Year</span>
-              {yearsApi.isLoading ? (
-                <Skeleton className="h-8 w-52" />
-              ) : (
-                <Select value={selectedYearId} onValueChange={setSelectedYearId}>
-                  <SelectTrigger className="w-56">
-                    <SelectValue placeholder="Select a year…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectableYears.map(y => (
-                      <SelectItem key={y.id} value={String(y.id)}>
-                        {y.year_label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+      {yearsApi.isLoading || campaignApi.isLoading ? (
+        <Skeleton className="h-32 w-full rounded-xl" />
+      ) : yearsApi.error ? (
+        <InlineError message={yearsApi.error} />
+      ) : !activeYear ? (
+        <EmptyState
+          icon={Calendar}
+          title="No active academic year"
+          description={
+            isSuperAdmin
+              ? 'Open a new academic year to start a campaign. All phases will be auto-scheduled and ready to open.'
+              : 'A super-admin needs to open a new academic year before a campaign can start.'
+          }
+        />
+      ) : (
+        <Tabs defaultValue="year">
+          <TabsList className="mb-4">
+            <TabsTrigger value="year">Current year</TabsTrigger>
+            <TabsTrigger value="phases">Campaign phases</TabsTrigger>
+          </TabsList>
+
+          {/* ── Tab 1: Year details ── */}
+          <TabsContent value="year">
+            <Card>
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-semibold text-foreground">{activeYear.year}</span>
+                    <StatusBadge status={activeYear.status} />
+                  </div>
+                  <p className="text-sm text-foreground">{activeYear.year_label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDate(activeYear.start_date)} → {formatDate(activeYear.end_date)}
+                    {' · '}Wishlist size: {activeYear.wishlist_size}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setYearDialog({ open: true, initial: activeYear })}
+                >
+                  <Pencil className="size-3.5" />
+                  Edit
+                </Button>
+              </CardContent>
+            </Card>
+
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <Lock className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                Closing, reopening, or archiving this year happens in the Lifecycle workspace
+                (super-admin only). Closed and archived years move to the History workspace.
+              </span>
             </div>
-            {selectedYearId && (
-              <Button size="sm" onClick={() => setCreatePhaseOpen(true)}>
-                <Plus className="size-4" />
-                Add Phase
-              </Button>
+          </TabsContent>
+
+          {/* ── Tab 2: Campaign phases ── */}
+          <TabsContent value="phases">
+            {phasesApi.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-20 w-full rounded-xl" />
+                <Skeleton className="h-20 w-full rounded-xl" />
+                <Skeleton className="h-20 w-full rounded-xl" />
+              </div>
+            ) : phasesApi.error ? (
+              <InlineError message={phasesApi.error} />
+            ) : (
+              <div className="space-y-2">
+                {ALL_PHASE_TYPES.map(pt => (
+                  <PhaseRow
+                    key={pt}
+                    phaseType={pt}
+                    record={phasesByType.get(pt)}
+                    isOpen={openPhaseTypes.has(pt)}
+                    yearEditable={activeYear.status === 'ACTIVE'}
+                    onEdit={record => setPhaseDialog({ open: true, record })}
+                    onQuickAction={handlePhaseQuickAction}
+                  />
+                ))}
+              </div>
             )}
-          </div>
+          </TabsContent>
+        </Tabs>
+      )}
 
-          {!selectedYearId ? (
-            <EmptyState
-              icon={Calendar}
-              title="Select a year"
-              description="Choose an academic year above to view and manage its campaign phases."
-            />
-          ) : phasesApi.isLoading ? (
-            <CardSkeleton />
-          ) : phasesApi.error ? (
-            <InlineError message={phasesApi.error} />
-          ) : phases.length === 0 ? (
-            <EmptyState
-              icon={Calendar}
-              title="No phases yet"
-              description="Add phases to define the timeline of this academic year."
-            />
-          ) : (
-            <div className="space-y-3">
-              {phases.map(p => (
-                <PhaseCard
-                  key={p.id}
-                  phase={p}
-                  openPhases={openPhases}
-                  onEdit={setEditPhase}
-                  onArchive={ph => { setArchivePhaseError(null); setArchivePhase(ph) }}
-                />
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* ── Year dialogs ── */}
       <YearDialog
-        mode="create"
-        open={createYearOpen}
-        onOpenChange={setCreateYearOpen}
-        onSuccess={yearsApi.refetch}
-      />
-      <YearDialog
-        mode="edit"
-        year={editYear ?? undefined}
-        open={editYear !== null}
-        onOpenChange={open => { if (!open) setEditYear(null) }}
-        onSuccess={yearsApi.refetch}
-      />
-      <ConfirmDialog
-        open={activateYear !== null}
-        onOpenChange={open => { if (!open) { setActivateYear(null); setActivateError(null) } }}
-        title="Set Active Year"
-        description={`Make "${activateYear?.year_label ?? ''}" the active academic year? Any currently active year will be closed.`}
-        confirmLabel="Set Active"
-        isLoading={activateLoading}
-        error={activateError}
-        onConfirm={handleActivateYear}
-      />
-      <ConfirmDialog
-        open={archiveYear !== null}
-        onOpenChange={open => { if (!open) { setArchiveYear(null); setArchiveYearError(null) } }}
-        title="Archive Academic Year"
-        description={`Archive "${archiveYear?.year_label ?? ''}"? Archived years cannot be edited or reactivated.`}
-        confirmLabel="Archive"
-        destructive
-        isLoading={archiveYearLoading}
-        error={archiveYearError}
-        onConfirm={handleArchiveYear}
+        open={yearDialog.open}
+        onOpenChange={open => setYearDialog(prev => ({ ...prev, open }))}
+        initial={yearDialog.initial}
+        onSuccess={() => {
+          yearsApi.refetch()
+          campaignApi.refetch()
+        }}
       />
 
-      {/* ── Phase dialogs ── */}
-      <PhaseDialog
-        mode="create"
-        yearId={selectedYearNum}
-        open={createPhaseOpen}
-        onOpenChange={setCreatePhaseOpen}
-        onSuccess={phasesApi.refetch}
-      />
-      <PhaseDialog
-        mode="edit"
-        phase={editPhase ?? undefined}
-        yearId={selectedYearNum}
-        open={editPhase !== null}
-        onOpenChange={open => { if (!open) setEditPhase(null) }}
-        onSuccess={phasesApi.refetch}
-      />
-      <ConfirmDialog
-        open={archivePhase !== null}
-        onOpenChange={open => { if (!open) { setArchivePhase(null); setArchivePhaseError(null) } }}
-        title="Archive Phase"
-        description={`Archive the "${archivePhase ? PHASE_LABELS[archivePhase.phase_type] : ''}" phase? It will no longer be visible to users.`}
-        confirmLabel="Archive"
-        destructive
-        isLoading={archivePhaseLoading}
-        error={archivePhaseError}
-        onConfirm={handleArchivePhase}
+      <PhaseScheduleDialog
+        open={phaseDialog.open}
+        onOpenChange={open => setPhaseDialog(prev => ({ ...prev, open }))}
+        record={phaseDialog.record}
+        onSuccess={() => {
+          phasesApi.refetch()
+          campaignApi.refetch()
+        }}
       />
     </>
   )

@@ -118,9 +118,16 @@ function TeamDetailDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const [team, setTeam] = useState<Team | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Both fetches gate on the same (open, teamCode) pair. Using useApi for the
+  // team detail too keeps the loading/error/data triple in sync with state
+  // changes without a manual useEffect that would lint-flag setState-in-effect.
+  const teamApi = useApi<Team | null>(
+    () =>
+      open && teamCode
+        ? api.get<Team>(`/api/admin/teams/${teamCode}/`)
+        : Promise.resolve(null),
+    [open, teamCode],
+  )
 
   const wishlistsApi = useApi<PaginatedResponse<WishlistListItem>>(
     () =>
@@ -132,20 +139,9 @@ function TeamDetailDialog({
     [open, teamCode],
   )
 
-  useEffect(() => {
-    if (!open || !teamCode) {
-      setTeam(null)
-      setError(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    api
-      .get<Team>(`/api/admin/teams/${teamCode}/`)
-      .then(t => setTeam(t))
-      .catch(err => setError(extractMessage(err)))
-      .finally(() => setLoading(false))
-  }, [open, teamCode])
+  const team = teamApi.data
+  const loading = teamApi.isLoading
+  const error = teamApi.error
 
   const wishlists = wishlistsApi.data?.results ?? []
 
