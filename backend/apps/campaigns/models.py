@@ -27,6 +27,7 @@ class CampaignPhase(models.Model):
     end_at = models.DateTimeField(null=True, blank=True)
     display_order = models.PositiveSmallIntegerField(default=1)
     is_archived = models.BooleanField(default=False)
+    closing_soon_notified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -966,21 +966,40 @@ Frontend polling guidance:
 - recommended interval: 30 seconds
 
 Implemented event hooks:
-- team invitation received
+- team invitation received / **rejected**
 - team member joined / left / removed
 - leadership transferred
 - team locked
+- **team dissolved** (all active members notified)
+- **team supervisor added / removed**
 - subject submitted / resubmitted / approved / rejected
+- **subject pending moderation** (notifies platform admins on teacher submit/resubmit)
+- **subject archived**
+- **subject assigned to team**
 - assignment result available
 - appeal submitted / accepted / rejected
 - deliverable uploaded / reviewed / comment added
 - defense requested
 - supervisor accepted / denied defense request
-- defense ready to schedule
+- defense ready to schedule (**reclassified NORMAL → IMPORTANT**)
 - defense scheduled / rescheduled
+- **defense cancelled**
+- **defense jury updated** (new jurors notified)
+- **defense files updated** (supervisor-only, only once defense is SCHEDULED)
 - jury assigned
 - PV uploaded
 - academic year closed / force closed / reopened / archived
+- **academic year opened** (all active users notified)
+- **campaign phase opened / closed** (audience resolved by phase type)
+- **campaign phase closing soon** (24-hour advance reminder, one-shot per deadline)
+- **platform grant received / revoked**
+- **password changed** (reset-confirm and change-password flows)
+
+Phase closing-soon mechanism:
+- `CampaignPhase.closing_soon_notified_at` (null DateTimeField) — one-shot guard, cleared by `CampaignPhaseSerializer.update()` whenever `end_at` is rescheduled
+- `apps.campaigns.tasks.send_phase_closing_soon_reminders` — Celery task, fired every 15 minutes by Celery beat
+- Picks phases where `end_at ∈ (now, now + 24h]`, `closing_soon_notified_at IS NULL`, `is_archived = False`, parent year `ACTIVE`
+- Uses `SELECT FOR UPDATE` to prevent double-fire under concurrent beat runs
 
 Duplicate and actor rules:
 - duplicate recipients are collapsed to one notification

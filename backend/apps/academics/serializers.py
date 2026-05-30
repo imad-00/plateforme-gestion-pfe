@@ -72,6 +72,9 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         # open). The admin then reschedules + opens phases via PATCH.
         if year.status == AcademicYear.Status.ACTIVE:
             self._auto_create_phases(year)
+            actor = getattr(self.context.get("request", None), "user", None)
+            from apps.notifications.services import NotificationService
+            NotificationService.notify_academic_year_opened(year, actor=actor)
         return year
 
     @staticmethod

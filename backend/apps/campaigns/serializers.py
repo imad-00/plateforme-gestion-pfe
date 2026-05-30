@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.campaigns.models import CampaignPhase
+from apps.campaigns.services import CampaignPhaseService
 
 
 class CampaignPhaseSerializer(serializers.ModelSerializer):
@@ -73,3 +74,27 @@ class CampaignPhaseSerializer(serializers.ModelSerializer):
                 )
 
         return attrs
+
+    def update(self, instance, validated_data):
+        actor = getattr(self.context.get("request", None), "user", None)
+        end_at_changing = "end_at" in validated_data
+
+        was_open = CampaignPhaseService.is_open(instance.academic_year, instance.phase_type)
+
+        instance = super().update(instance, validated_data)
+
+        # Reset one-shot guard whenever end_at is rescheduled so the reminder
+        # fires again for the new deadline.
+        if end_at_changing:
+            instance.closing_soon_notified_at = None
+            instance.save(update_fields=["closing_soon_notified_at", "updated_at"])
+
+        is_open_now = CampaignPhaseService.is_open(instance.academic_year, instance.phase_type)
+
+        from apps.notifications.services import NotificationService
+        if not was_open and is_open_now:
+            NotificationService.notify_phase_opened(instance, actor=actor)
+        elif was_open and not is_open_now:
+            NotificationService.notify_phase_closed(instance, actor=actor)
+
+        return instance

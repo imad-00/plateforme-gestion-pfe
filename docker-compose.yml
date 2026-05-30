@@ -31,6 +31,20 @@ services:
       redis:
         condition: service_started
 
+  beat:
+    build:
+      context: ./backend
+    command: celery -A config beat -l info
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   db:
     image: postgres:16-alpine
     env_file:

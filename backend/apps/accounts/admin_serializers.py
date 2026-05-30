@@ -360,7 +360,7 @@ class SuperAdminCreateAdminSerializer(serializers.ModelSerializer):
             account_status=User.AccountStatus.ACTIVE,
             **validated_data,
         )
-        PlatformAccessGrant.objects.create(
+        grant = PlatformAccessGrant.objects.create(
             user=user,
             access_level=access_level,
             granted_by=actor,
@@ -368,4 +368,8 @@ class SuperAdminCreateAdminSerializer(serializers.ModelSerializer):
         user.is_staff = True
         user.is_superuser = access_level == PlatformAccessGrant.AccessLevel.SUPER_ADMIN
         user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
+
+        from apps.notifications.services import NotificationService
+        NotificationService.notify_platform_grant_received(grant, actor=actor)
+
         return user

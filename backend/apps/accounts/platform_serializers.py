@@ -83,6 +83,10 @@ class PlatformAccessGrantCreateSerializer(serializers.ModelSerializer):
             user.is_superuser = True
         user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
 
+        if actor is None or grant.user_id != actor.id:
+            from apps.notifications.services import NotificationService
+            NotificationService.notify_platform_grant_received(grant, actor=actor)
+
         return grant
 
 
@@ -94,6 +98,7 @@ class PlatformAccessGrantRevokeSerializer(serializers.Serializer):
         if grant.revoked_at is not None:
             raise serializers.ValidationError({"detail": "Platform access grant is already revoked."})
 
+        actor = self.context.get("actor")
         revoked_at = self.validated_data.get("revoked_at", timezone.now())
         grant.revoked_at = revoked_at
         grant.save(update_fields=["revoked_at", "updated_at"])
@@ -104,5 +109,9 @@ class PlatformAccessGrantRevokeSerializer(serializers.Serializer):
             user.is_staff = False
             user.is_superuser = False
             user.save(update_fields=["is_staff", "is_superuser", "updated_at"])
+
+        if actor is None or grant.user_id != actor.id:
+            from apps.notifications.services import NotificationService
+            NotificationService.notify_platform_grant_revoked(grant, actor=actor)
 
         return grant

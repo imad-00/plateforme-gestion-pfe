@@ -76,7 +76,7 @@ class SuperAdminPlatformAccessGrantRevokeView(APIView):
     )
     def post(self, request, pk):
         grant = get_object_or_404(PlatformAccessGrant.objects.select_related("user"), pk=pk)
-        serializer = PlatformAccessGrantRevokeSerializer(data=request.data)
+        serializer = PlatformAccessGrantRevokeSerializer(data=request.data, context={"actor": request.user})
         serializer.is_valid(raise_exception=True)
         grant = serializer.revoke(grant)
         AdminActionLogService.log(

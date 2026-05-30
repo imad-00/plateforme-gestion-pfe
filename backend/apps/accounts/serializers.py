@@ -313,6 +313,9 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         otp_record.consumed_at = timezone.now()
         otp_record.save(update_fields=["consumed_at", "updated_at"])
 
+        from apps.notifications.services import NotificationService
+        NotificationService.notify_password_changed(user)
+
         return {"detail": "Password reset completed successfully."}
 
 
@@ -338,6 +341,8 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context["request"].user
         user.set_password(validated_data["new_password"])
         user.save(update_fields=["password", "updated_at"])
+        from apps.notifications.services import NotificationService
+        NotificationService.notify_password_changed(user)
         return {"detail": "Password changed successfully."}
 
 
