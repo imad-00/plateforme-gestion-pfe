@@ -353,7 +353,7 @@ class DashboardService:
                 .first()
             )
 
-        subject = team.selected_subject if team else None
+        subject = getattr(team, 'selected_subject', None) if team else None
         defense = None
         latest_deliverables = []
         total_files = 0
