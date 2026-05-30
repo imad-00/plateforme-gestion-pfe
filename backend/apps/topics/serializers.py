@@ -271,6 +271,7 @@ class SubjectWorkflowService:
             f"Your subject {subject.title} was submitted.",
             actor=subject.proposed_by,
         )
+        NotificationService.notify_subject_pending_moderation(subject, actor=subject.proposed_by)
         return subject
 
     @staticmethod
@@ -307,6 +308,7 @@ class SubjectWorkflowService:
             f"Your subject {subject.title} was resubmitted.",
             actor=subject.proposed_by,
         )
+        NotificationService.notify_subject_pending_moderation(subject, actor=subject.proposed_by)
         return subject
 
     @staticmethod
@@ -389,11 +391,14 @@ class SubjectWorkflowService:
 
     @staticmethod
     @transaction.atomic
-    def archive(subject: Subject):
+    def archive(subject: Subject, actor=None):
         SubjectWorkflowService._ensure_active_academic_year_subject(subject)
         if subject.status == Subject.Status.ARCHIVED:
             return subject
 
         subject.status = Subject.Status.ARCHIVED
         subject.save(update_fields=["status", "updated_at"])
+        from apps.notifications.services import NotificationService
+
+        NotificationService.notify_subject_archived(subject, actor=actor)
         return subject

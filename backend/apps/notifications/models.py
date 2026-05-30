@@ -33,6 +33,29 @@ class Notification(models.Model):
         ACADEMIC_YEAR_FORCE_CLOSED = "ACADEMIC_YEAR_FORCE_CLOSED", "Academic Year Force Closed"
         ACADEMIC_YEAR_REOPENED = "ACADEMIC_YEAR_REOPENED", "Academic Year Reopened"
         ACADEMIC_YEAR_ARCHIVED = "ACADEMIC_YEAR_ARCHIVED", "Academic Year Archived"
+        # ─── Added in the 2026-05-30 gap-fill pass ───────────────────────────
+        # Teams
+        TEAM_INVITATION_REJECTED = "TEAM_INVITATION_REJECTED", "Team Invitation Rejected"
+        TEAM_DISSOLVED = "TEAM_DISSOLVED", "Team Dissolved"
+        TEAM_SUPERVISOR_ADDED = "TEAM_SUPERVISOR_ADDED", "Team Supervisor Added"
+        TEAM_SUPERVISOR_REMOVED = "TEAM_SUPERVISOR_REMOVED", "Team Supervisor Removed"
+        # Subjects
+        SUBJECT_PENDING_MODERATION = "SUBJECT_PENDING_MODERATION", "Subject Pending Moderation"
+        SUBJECT_ARCHIVED = "SUBJECT_ARCHIVED", "Subject Archived"
+        SUBJECT_ASSIGNED_TO_TEAM = "SUBJECT_ASSIGNED_TO_TEAM", "Subject Assigned To Team"
+        # Defenses
+        DEFENSE_CANCELLED = "DEFENSE_CANCELLED", "Defense Cancelled"
+        DEFENSE_JURY_UPDATED = "DEFENSE_JURY_UPDATED", "Defense Jury Updated"
+        DEFENSE_FILES_UPDATED = "DEFENSE_FILES_UPDATED", "Defense Files Updated"
+        # Academic year + phases
+        ACADEMIC_YEAR_OPENED = "ACADEMIC_YEAR_OPENED", "Academic Year Opened"
+        CAMPAIGN_PHASE_OPENED = "CAMPAIGN_PHASE_OPENED", "Campaign Phase Opened"
+        CAMPAIGN_PHASE_CLOSED = "CAMPAIGN_PHASE_CLOSED", "Campaign Phase Closed"
+        CAMPAIGN_PHASE_CLOSING_SOON = "CAMPAIGN_PHASE_CLOSING_SOON", "Campaign Phase Closing Soon"
+        # Platform access + security
+        PLATFORM_GRANT_RECEIVED = "PLATFORM_GRANT_RECEIVED", "Platform Grant Received"
+        PLATFORM_GRANT_REVOKED = "PLATFORM_GRANT_REVOKED", "Platform Grant Revoked"
+        PASSWORD_CHANGED = "PASSWORD_CHANGED", "Password Changed"
 
     class Importance(models.TextChoices):
         NORMAL = "NORMAL", "Normal"

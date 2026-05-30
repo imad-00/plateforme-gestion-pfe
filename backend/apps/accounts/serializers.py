@@ -12,7 +12,12 @@ from rest_framework.exceptions import APIException
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import PasswordResetOTP, StudentProfile, TeacherProfile
+from apps.accounts.models import (
+    ExternalSupervisorProfile,
+    PasswordResetOTP,
+    StudentProfile,
+    TeacherProfile,
+)
 
 User = get_user_model()
 
@@ -54,9 +59,16 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
         fields = ["grade", "department", "departement"]
 
 
+class ExternalSupervisorProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExternalSupervisorProfile
+        fields = ["academic_year", "organization", "job_title", "expertise_area"]
+
+
 class UserSerializer(serializers.ModelSerializer):
     student_profile = StudentProfileSerializer(read_only=True)
     teacher_profile = TeacherProfileSerializer(read_only=True)
+    external_supervisor_profile = ExternalSupervisorProfileSerializer(read_only=True)
     platform_access_level = serializers.SerializerMethodField()
 
     class Meta:
@@ -73,6 +85,7 @@ class UserSerializer(serializers.ModelSerializer):
             "platform_access_level",
             "student_profile",
             "teacher_profile",
+            "external_supervisor_profile",
         ]
 
     def get_platform_access_level(self, obj):

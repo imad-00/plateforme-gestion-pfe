@@ -176,7 +176,7 @@ class AdminSubjectArchiveView(APIView):
     @extend_schema(tags=["Admin Subjects"], responses=AdminSubjectListSerializer)
     def post(self, request, pk):
         subject = get_object_or_404(Subject, pk=pk)
-        subject = SubjectWorkflowService.archive(subject)
+        subject = SubjectWorkflowService.archive(subject, actor=request.user)
         return Response(AdminSubjectListSerializer(subject).data, status=status.HTTP_200_OK)
 
 

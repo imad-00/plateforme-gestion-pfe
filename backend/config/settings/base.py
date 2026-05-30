@@ -199,6 +199,16 @@ if USE_S3:
     AWS_QUERYSTRING_AUTH = False
     AWS_S3_FILE_OVERWRITE = False
 
+    # When MINIO_PUBLIC_ENDPOINT is set (e.g. "localhost:9000"), django-storages
+    # uses it as the custom domain when rendering object URLs. This decouples
+    # the internal endpoint Django talks to (e.g. "minio:9000" in compose) from
+    # the externally reachable host the browser must hit. AWS_S3_URL_PROTOCOL
+    # ensures the rendered URLs match MINIO_USE_SSL.
+    public_endpoint = env("MINIO_PUBLIC_ENDPOINT", default="")
+    if public_endpoint:
+        AWS_S3_CUSTOM_DOMAIN = f"{public_endpoint}/{AWS_STORAGE_BUCKET_NAME}"
+        AWS_S3_URL_PROTOCOL = f"{protocol}:"
+
     STORAGES = {
         "default": {"BACKEND": "storages.backends.s3.S3Storage"},
         "staticfiles": {

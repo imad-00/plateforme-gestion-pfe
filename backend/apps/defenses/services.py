@@ -266,6 +266,9 @@ class DefenseService:
                 accepted=False,
                 actor=supervisor_user,
             )
+            # Leader already got the personal notification above; this informs
+            # the rest of the team that the workflow is cancelled.
+            NotificationService.notify_defense_cancelled(defense, actor=supervisor_user)
             return defense
 
         if not defense.supervisor_decisions.filter(
@@ -339,7 +342,22 @@ class DefenseService:
         DefenseService._require_defense_window(defense.team.academic_year)
         if defense.status != Defense.Status.SCHEDULED:
             raise serializers.ValidationError({"defense": "Jury can be updated only for SCHEDULED defenses."})
+
+        # Snapshot the current jury user set BEFORE rebuild so we can diff and
+        # notify the newcomers (existing jurors don't need a second ping).
+        previous_user_ids = set(
+            defense.jury_assignments.values_list("user_id", flat=True)
+        )
         DefenseService._rebuild_jury_assignments(defense, admin_user, president_user, examiner_users, guest_users=guest_users)
+        new_jurors = [
+            assignment.user
+            for assignment in defense.jury_assignments.select_related("user").all()
+            if assignment.user_id not in previous_user_ids
+        ]
+        if new_jurors:
+            from apps.notifications.services import NotificationService
+
+            NotificationService.notify_defense_jury_updated(defense, new_jurors, actor=admin_user)
         return defense
 
     @staticmethod
@@ -390,6 +408,12 @@ class DefenseService:
                 for index, deliverable_file in enumerate(resulting_files, start=1)
             ]
         )
+        # Only fire for SCHEDULED — jurors care about file changes only after
+        # they have access. Pre-schedule edits don't need to notify anyone.
+        if defense.status == Defense.Status.SCHEDULED:
+            from apps.notifications.services import NotificationService
+
+            NotificationService.notify_defense_files_updated(defense, actor=admin_user)
         return defense
 
     @staticmethod

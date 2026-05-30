@@ -437,10 +437,47 @@ class ReportService:
 
     @staticmethod
     def csv_filename_for(report_key, academic_year):
-        prefixes = {
-            "defenses": "defenses",
-            "team_assignments": "team_assignments",
-            "student_results": "student_results",
-            "jury_planning": "jury_planning",
-        }
-        return ReportService._filename(prefixes[report_key], academic_year)
+        return ReportService._filename(ReportService._REPORT_PREFIXES[report_key], academic_year)
+
+    _REPORT_PREFIXES = {
+        "defenses": "defenses",
+        "team_assignments": "team_assignments",
+        "student_results": "student_results",
+        "jury_planning": "jury_planning",
+    }
+
+    @staticmethod
+    def to_xlsx(rows, columns):
+        # openpyxl is an existing runtime dep (see backend/requirements.txt).
+        # Imported locally so non-XLSX code paths don't pay the import cost.
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Report"
+        ws.append(columns)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        ws.freeze_panes = "A2"
+
+        for row in rows:
+            ws.append([ReportService._sanitize_csv_cell(row.get(column, "")) for column in columns])
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
+
+    @staticmethod
+    def build_xlsx_response(rows, columns, filename):
+        response = HttpResponse(
+            ReportService.to_xlsx(rows, columns),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @staticmethod
+    def xlsx_filename_for(report_key, academic_year):
+        label = (academic_year.year or str(academic_year.pk)).replace("/", "-").replace(" ", "-")
+        return f"{ReportService._REPORT_PREFIXES[report_key]}_{label}.xlsx"

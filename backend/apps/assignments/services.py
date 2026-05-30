@@ -374,6 +374,10 @@ class AssignmentService(AssignmentPermissionMixin):
         team.assignment_validated_by = None
         team.save(update_fields=["assignment_validated_at", "assignment_validated_by", "updated_at"])
         team.refresh_from_db()
+        from apps.notifications.services import NotificationService
+
+        # Tell the proposer their subject was selected (they're an auto-supervisor now).
+        NotificationService.notify_subject_assigned_to_team(subject, team)
         return team
 
     @staticmethod
