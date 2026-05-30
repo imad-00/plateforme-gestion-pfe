@@ -12,6 +12,37 @@ This file is the **guide and blocknote** for frontend work. Whenever something i
 
 Newest entries on top.
 
+### 2026-05-30 — Notification gap-fill pass shipped
+
+Completes the backend notification wiring left pending from Sprint 11, adds the phase-closing-soon scheduled reminder, and syncs the frontend type union.
+
+**17 new `NotificationType` values added to `apps/notifications/models.py`:**
+- Team: `TEAM_INVITATION_REJECTED`, `TEAM_DISSOLVED`, `TEAM_SUPERVISOR_ADDED`, `TEAM_SUPERVISOR_REMOVED`
+- Subject: `SUBJECT_PENDING_MODERATION`, `SUBJECT_ARCHIVED`, `SUBJECT_ASSIGNED_TO_TEAM`
+- Defense: `DEFENSE_CANCELLED`, `DEFENSE_JURY_UPDATED`, `DEFENSE_FILES_UPDATED`
+- Academic year: `ACADEMIC_YEAR_OPENED`
+- Campaign: `CAMPAIGN_PHASE_OPENED`, `CAMPAIGN_PHASE_CLOSED`, `CAMPAIGN_PHASE_CLOSING_SOON`
+- Platform: `PLATFORM_GRANT_RECEIVED`, `PLATFORM_GRANT_REVOKED`
+- Auth: `PASSWORD_CHANGED`
+
+**Reclassification:** `DEFENSE_READY_TO_SCHEDULE` promoted from `NORMAL` to `IMPORTANT`.
+
+**New callsites wired:**
+- `academics/serializers.py::AcademicYearSerializer.create()` — fires `notify_academic_year_opened` when a new ACTIVE year is created.
+- `campaigns/serializers.py::CampaignPhaseSerializer.update()` — overridden to detect open/close transitions and fire `notify_phase_opened` / `notify_phase_closed`; resets `closing_soon_notified_at` whenever `end_at` changes.
+- `accounts/platform_serializers.py::PlatformAccessGrantCreateSerializer.create()` and `PlatformAccessGrantRevokeSerializer.revoke()` — fire `notify_platform_grant_received` / `notify_platform_grant_revoked`; skip self-grant edge case.
+- `accounts/admin_serializers.py::SuperAdminCreateAdminSerializer.create()` — fires `notify_platform_grant_received` for the inline grant created with new admin users.
+- `accounts/serializers.py::PasswordResetConfirmSerializer.create()` and `ChangePasswordSerializer.create()` — fire `notify_password_changed`.
+
+**Phase closing-soon scheduled task:**
+- `campaigns/models.py` — new `closing_soon_notified_at` DateTimeField (null, one-shot guard).
+- `campaigns/migrations/0005_campaignphase_closing_soon_notified_at.py` — migration.
+- `campaigns/tasks.py` — new Celery task `send_phase_closing_soon_reminders` picks phases with `end_at ∈ (now, now+24h]` and `closing_soon_notified_at IS NULL`.
+- `config/celery.py` — beat schedule entry running the task every 15 minutes.
+- `docker-compose.yml` — new `beat` service alongside `worker`.
+
+**Frontend (`src/lib/types.ts`):** `NotificationType` union extended with all 17 new strings. `npx tsc --noEmit` passes with zero errors.
+
 ### 2026-05-30 — Email notifications activated
 
 The notification email path was 90% built by Sprint 11 backend but never actually fired in dev — `config/settings/local.py` hardcoded `EMAIL_BACKEND` to console, overriding `.env`. This pass unblocks real SMTP sends, adds an HTML email template, and adds a one-click verification tool for admins.
