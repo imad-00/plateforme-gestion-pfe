@@ -24,6 +24,7 @@ interface AuthContextValue {
   isLoading: boolean
   login: (identifier: string, password: string) => Promise<User>
   logout: () => void
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -190,8 +191,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [storeAccessToken],
   )
 
+  const refreshUser = useCallback(async () => {
+    const token = tokenRef.current
+    if (!token) return
+    try {
+      const meRes = await fetch(`${API_BASE}/api/auth/me/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!meRes.ok) return
+      const userData = (await meRes.json()) as User
+      setUser(userData)
+    } catch {
+      /* silent — caller stays authenticated with stale data */
+    }
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ user, accessToken, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, accessToken, isLoading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

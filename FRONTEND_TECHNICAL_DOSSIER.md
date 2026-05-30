@@ -12,6 +12,32 @@ This file is the **guide and blocknote** for frontend work. Whenever something i
 
 Newest entries on top.
 
+### 2026-05-30 — Notification gap-fill pass shipped
+
+Closing the 17-event gap on the backend notification surface. The previous "email activated" pass and the Sprint 6/7 commit added 17 new `NotificationType` values + 17 `notify_*` methods, but only 6 domain callsites were wired (teams, subjects, defenses). This pass wires the remaining 6 callsites and adds the closing-soon Celery scheduled task.
+
+**Backend additions (wires)**:
+- **`AcademicYearSerializer.create()`** (`apps/academics/serializers.py`) — fires `notify_academic_year_opened(year, actor=request.user)` immediately after `_auto_create_phases` when the new year is created as ACTIVE. Pulls the actor from `serializer.context["request"].user` (the standard DRF pattern).
+- **`CampaignPhaseSerializer.update()`** (`apps/campaigns/serializers.py`) — overridden to snapshot `was_open = CampaignPhaseService.is_open(...)` before save, re-evaluate `is_open_now` after save, and fire `notify_phase_opened` / `notify_phase_closed` exactly on the open/close transition. Resets `closing_soon_notified_at` whenever `end_at` changes so a rescheduled deadline gets its own one-shot reminder.
+- **`PlatformAccessGrantCreateSerializer.create`** + **`PlatformAccessGrantRevokeSerializer.revoke`** (`apps/accounts/platform_serializers.py`) — fire `notify_platform_grant_received` / `notify_platform_grant_revoked` after the grant is persisted + platform flags are synced. Self-grants (`actor.id == user.id`) are skipped to avoid "you got promoted by you" UX. `platform_views.py::SuperAdminPlatformAccessGrantRevokeView` updated to pass `context={"actor": request.user}` (the create view already did this).
+- **`PasswordResetConfirmSerializer.create`** + **`ChangePasswordSerializer.create`** (`apps/accounts/serializers.py`) — fire `notify_password_changed(user)` after `user.set_password()` + `user.save()`. Both paths (forgot-password OTP flow + logged-in change) now produce the security confirmation.
+
+**Backend additions (closing-soon machinery)**:
+- **`CampaignPhase.closing_soon_notified_at`** — new nullable `DateTimeField`. One-shot guard for the reminder. Migration: `apps/campaigns/migrations/0005_campaignphase_closing_soon_notified_at.py`.
+- **`apps/campaigns/tasks.py`** — new file. `send_phase_closing_soon_reminders` task selects phases where `end_at` is within the next 24 hours, `closing_soon_notified_at` is null, `is_archived` is false, and the parent year is ACTIVE. Re-fetches each phase under `select_for_update` to avoid racing with the serializer reset, then fires `notify_phase_closing_soon` and sets the guard.
+- **`config/celery.py`** — added `app.conf.beat_schedule` with the new task scheduled every 15 minutes via `crontab(minute="*/15")`.
+- **`docker-compose.yml`** — new `beat` service mirroring `worker`, runs `celery -A config beat -l info`. Without this service the schedule never fires.
+
+**Frontend additions**:
+- **`lib/types.ts`** — extended `NotificationType` union with the 17 new strings. Bell/notifications page render generically by `title` + `message`, so no per-type icon changes needed; this just keeps TS strict mode honest.
+
+**Other resolved**:
+- **`config/settings/local.py`** — resolved a merge conflict that broke Python import. Final state: `EMAIL_FORCE_CONSOLE=1` env flag overrides to console, otherwise honors `.env` SMTP backend. `CORS_ALLOWED_ORIGINS = ["http://localhost:3000"]` preserved from the other side of the merge.
+
+**Quality gates**: `python -m ast` parses cleanly on all touched files. `npx tsc --noEmit` ✅, `npm run lint` ✅.
+
+**Activation note**: `docker compose up -d` now starts a fourth Celery-related container (`beat`). If your local stack was already running, do `docker compose up -d --build beat worker` to bring the new service up alongside the worker.
+
 ### 2026-05-30 — Email notifications activated
 
 The notification email path was 90% built by Sprint 11 backend but never actually fired in dev — `config/settings/local.py` hardcoded `EMAIL_BACKEND` to console, overriding `.env`. This pass unblocks real SMTP sends, adds an HTML email template, and adds a one-click verification tool for admins.

@@ -16,6 +16,7 @@ import {
   Landmark,
   LayoutDashboard,
   ListChecks,
+  UserSearch,
   ScrollText,
   Upload,
   UserCog,
@@ -51,7 +52,9 @@ interface NavItem {
 const NAV_STUDENT: NavItem[] = [
   { href: '/student',              label: 'Dashboard',    icon: LayoutDashboard, exact: true },
   { href: '/student/team',         label: 'My Team',      icon: Users      },
+  { href: '/student/discover',     label: 'Find Teammates', icon: UserSearch },
   { href: '/student/subjects',     label: 'Subjects',     icon: BookOpen   },
+  { href: '/student/wishlist',     label: 'My Wishlist',  icon: ListChecks },
   { href: '/student/results',      label: 'Results',      icon: Award      },
   { href: '/student/deliverables', label: 'Deliverables', icon: Upload     },
   { href: '/student/defense',      label: 'Defense',      icon: Landmark,   requiresPhase: 'DEFENSE_WINDOW' },
@@ -99,7 +102,7 @@ function getNavItems(user: User): NavItem[] {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function Sidebar() {
+export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; className?: string } = {}) {
   const { user } = useAuth()
   const pathname = usePathname()
   // One quick fetch shared by every phase-gated entry. Errors are silent —
@@ -131,15 +134,20 @@ export function Sidebar() {
   })
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+    <aside className={cn('flex h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar', className)}>
       {/* Logo */}
       <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
         <div className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <GraduationCap className="size-4" />
         </div>
-        <span className="font-semibold tracking-tight text-sidebar-foreground">
-          GradeX
-        </span>
+        <div className="flex min-w-0 flex-col leading-tight">
+          <span className="font-semibold tracking-tight text-sidebar-foreground">
+            GradeX
+          </span>
+          <span className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">
+            ESI-SBA
+          </span>
+        </div>
       </div>
 
       {/* Nav */}
@@ -153,6 +161,7 @@ export function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={onNavigate}
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                     active

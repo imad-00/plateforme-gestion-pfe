@@ -142,6 +142,12 @@ function SubjectCard({
               Attachment
             </a>
           )}
+          <a
+            href={`/student/subjects/${subject.id}`}
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            View details →
+          </a>
         </div>
       </CardContent>
     </Card>

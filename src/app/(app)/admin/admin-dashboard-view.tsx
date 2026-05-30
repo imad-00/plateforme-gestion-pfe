@@ -19,7 +19,8 @@ import {
 import { useAuth } from '@/lib/auth-context'
 import { api, ApiClientError } from '@/lib/api-client'
 import { useApi } from '@/hooks/use-api'
-import type { AdminDashboard } from '@/lib/types'
+import type { AdminDashboard, AdminTrendsResponse } from '@/lib/types'
+import { TrendChart } from '@/components/shared/trend-chart'
 import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -27,10 +28,21 @@ import { Button } from '@/components/ui/button'
 
 
 function InlineError({ message }: { message: string }) {
+  const noYear = message.toLowerCase().includes('academic year')
   return (
     <div className="flex items-start gap-2 rounded-lg bg-status-error-bg p-3 text-sm text-status-error-fg">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
-      <span>{message}</span>
+      <span>
+        {message}
+        {noYear && (
+          <>
+            {' '}
+            <Link href="/admin/academic-years" className="font-medium underline underline-offset-4">
+              Create one here →
+            </Link>
+          </>
+        )}
+      </span>
     </div>
   )
 }
@@ -105,6 +117,23 @@ function BreakdownChip({ label, value, tone = 'neutral' }: StatBreakdown) {
   )
 }
 
+function TrendCard({ title, data }: { title: string; data?: { date: string; count: number }[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {data === undefined ? (
+          <Skeleton className="h-[60px] w-full" />
+        ) : (
+          <TrendChart data={data} ariaLabel={`${title} over the last ${data.length} days`} />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Loading + empty year ─────────────────────────────────────────────────────
 
 function LoadingSkeleton() {
@@ -123,6 +152,10 @@ export function AdminDashboardView() {
   useAuth()
 
   const dashApi = useApi<AdminDashboard>(() => api.get('/api/dashboard/admin/'), [])
+  const trendsApi = useApi<AdminTrendsResponse>(
+    () => api.get('/api/dashboard/admin/trends/?days=30'),
+    [],
+  )
 
   if (dashApi.isLoading) {
     return (
@@ -230,6 +263,19 @@ export function AdminDashboardView() {
           ]}
         />
       </div>
+
+      {/* Trends (last 30 days) */}
+      <section className="mt-8 space-y-3">
+        <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+          Activity trends
+          <span className="text-xs font-normal text-muted-foreground">last 30 days</span>
+        </h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          <TrendCard title="New users" data={trendsApi.data?.users} />
+          <TrendCard title="New subjects" data={trendsApi.data?.subjects} />
+          <TrendCard title="New teams" data={trendsApi.data?.teams} />
+        </div>
+      </section>
 
       {/* Quick actions */}
       <section className="mt-8 space-y-3">

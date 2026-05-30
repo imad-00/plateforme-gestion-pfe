@@ -641,6 +641,11 @@ export function UsersView() {
   const [revokeLoading, setRevokeLoading] = useState(false)
   const [revokeError, setRevokeError] = useState<string | null>(null)
 
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkAction, setBulkAction] = useState<'ACTIVE' | 'SUSPENDED' | 'ARCHIVED' | null>(null)
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
+
   // ── Data ──────────────────────────────────────────────────────────────────
   const usersApi = useApi<PaginatedResponse<User>>(
     () => {
@@ -681,6 +686,25 @@ export function UsersView() {
     }
   }
 
+  async function handleBulkConfirm() {
+    if (!bulkAction || selectedIds.size === 0) return
+    setBulkLoading(true)
+    setBulkError(null)
+    try {
+      await api.post('/api/admin/users/bulk-status/', {
+        ids: Array.from(selectedIds),
+        status: bulkAction,
+      })
+      setSelectedIds(new Set())
+      setBulkAction(null)
+      usersApi.refetch()
+    } catch (err) {
+      setBulkError(extractMessage(err))
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
   async function handleRevoke() {
     if (!revokeGrant) return
     setRevokeLoading(true)
@@ -698,7 +722,43 @@ export function UsersView() {
   }
 
   // ── Columns ───────────────────────────────────────────────────────────────
+  const rowData = usersApi.data?.results ?? []
+  const allOnPageSelected =
+    rowData.length > 0 && rowData.every(u => selectedIds.has(u.id))
+  const someOnPageSelected = rowData.some(u => selectedIds.has(u.id))
+
+  function toggleAllOnPage() {
+    const next = new Set(selectedIds)
+    if (allOnPageSelected) {
+      for (const u of rowData) next.delete(u.id)
+    } else {
+      for (const u of rowData) next.add(u.id)
+    }
+    setSelectedIds(next)
+  }
+
+  function toggleOne(id: number) {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
+
   const columns: Column<User>[] = [
+    {
+      key: 'select',
+      header: '',
+      className: 'w-10',
+      render: u => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${u.matricule}`}
+          checked={selectedIds.has(u.id)}
+          onChange={() => toggleOne(u.id)}
+          className="size-4 cursor-pointer accent-primary"
+        />
+      ),
+    },
     {
       key: 'matricule',
       header: 'Matricule',
@@ -855,6 +915,46 @@ export function UsersView() {
         </Select>
       </div>
 
+      {/* ── Bulk action toolbar ── */}
+      {selectedIds.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <p className="text-sm font-medium">
+            {selectedIds.size} user{selectedIds.size === 1 ? '' : 's'} selected
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-3 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          </p>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setBulkError(null); setBulkAction('ACTIVE') }}>
+              Activate
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setBulkError(null); setBulkAction('SUSPENDED') }}>
+              Suspend
+            </Button>
+            <Button size="sm" variant="outline" className="text-status-error-fg" onClick={() => { setBulkError(null); setBulkAction('ARCHIVED') }}>
+              Archive
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-3 flex items-center gap-3 text-xs text-muted-foreground">
+        <label className="inline-flex cursor-pointer items-center gap-1.5">
+          <input
+            type="checkbox"
+            className="size-4 cursor-pointer accent-primary"
+            checked={allOnPageSelected}
+            ref={el => { if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected }}
+            onChange={toggleAllOnPage}
+          />
+          Select all on this page
+        </label>
+      </div>
+
       {/* ── Table ── */}
       {usersApi.error ? (
         <InlineError message={usersApi.error} />
@@ -920,6 +1020,24 @@ export function UsersView() {
         isLoading={archiveLoading}
         error={archiveError}
         onConfirm={handleArchive}
+      />
+
+      <ConfirmDialog
+        open={bulkAction !== null}
+        onOpenChange={open => { if (!open) { setBulkAction(null); setBulkError(null) } }}
+        title={
+          bulkAction === 'ACTIVE'
+            ? 'Activate users'
+            : bulkAction === 'SUSPENDED'
+              ? 'Suspend users'
+              : 'Archive users'
+        }
+        description={`This will set ${selectedIds.size} user${selectedIds.size === 1 ? '' : 's'} to ${bulkAction?.toLowerCase()}. Continue?`}
+        confirmLabel={bulkAction === 'ARCHIVED' ? 'Archive' : bulkAction === 'SUSPENDED' ? 'Suspend' : 'Activate'}
+        destructive={bulkAction !== 'ACTIVE'}
+        isLoading={bulkLoading}
+        error={bulkError}
+        onConfirm={handleBulkConfirm}
       />
 
       <ConfirmDialog

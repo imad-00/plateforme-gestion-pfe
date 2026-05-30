@@ -21,5 +21,7 @@ export const config = {
     '/jury',
     '/notifications/:path*',
     '/notifications',
+    '/profile/:path*',
+    '/profile',
   ],
 }

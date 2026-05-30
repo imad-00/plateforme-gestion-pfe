@@ -91,6 +91,10 @@ export interface User {
   business_identity: BusinessIdentity
   account_status: AccountStatus
   platform_access_level: PlatformAccessLevel | null
+  bio?: string
+  cv_file_url?: string
+  interests?: string[]
+  must_reset_password?: boolean
   student_profile: StudentProfile | null
   teacher_profile: TeacherProfile | null
   external_supervisor_profile: ExternalSupervisorProfile | null
@@ -177,6 +181,9 @@ export interface PublicSubject {
   subject_code: string | null
   title: string
   description: string
+  requirements?: string
+  required_skills?: string
+  helpful_links?: string
   subject_type: SubjectType
   attachment_url: string | null
   attachment_key: string | null
@@ -192,6 +199,9 @@ export interface Subject {
   subject_code: string | null
   title: string
   description: string
+  requirements?: string
+  required_skills?: string
+  helpful_links?: string
   subject_type: SubjectType
   attachment_url: string | null
   attachment_key: string | null
@@ -441,6 +451,24 @@ export type NotificationType =
   | 'ACADEMIC_YEAR_FORCE_CLOSED'
   | 'ACADEMIC_YEAR_REOPENED'
   | 'ACADEMIC_YEAR_ARCHIVED'
+  // ── Added in the 2026-05-30 notification gap-fill pass ────────────────
+  | 'TEAM_INVITATION_REJECTED'
+  | 'TEAM_DISSOLVED'
+  | 'TEAM_SUPERVISOR_ADDED'
+  | 'TEAM_SUPERVISOR_REMOVED'
+  | 'SUBJECT_PENDING_MODERATION'
+  | 'SUBJECT_ARCHIVED'
+  | 'SUBJECT_ASSIGNED_TO_TEAM'
+  | 'DEFENSE_CANCELLED'
+  | 'DEFENSE_JURY_UPDATED'
+  | 'DEFENSE_FILES_UPDATED'
+  | 'ACADEMIC_YEAR_OPENED'
+  | 'CAMPAIGN_PHASE_OPENED'
+  | 'CAMPAIGN_PHASE_CLOSED'
+  | 'CAMPAIGN_PHASE_CLOSING_SOON'
+  | 'PLATFORM_GRANT_RECEIVED'
+  | 'PLATFORM_GRANT_REVOKED'
+  | 'PASSWORD_CHANGED'
 
 export type NotificationImportance = 'NORMAL' | 'IMPORTANT'
 
@@ -473,6 +501,14 @@ export interface DashboardAcademicYearSummary {
   id: number
   year: string
   status: AcademicYearStatus
+}
+
+// Admin trends — GET /api/dashboard/admin/trends/
+export interface AdminTrendsResponse {
+  days: number
+  users: { date: string; count: number }[]
+  subjects: { date: string; count: number }[]
+  teams: { date: string; count: number }[]
 }
 
 // Admin dashboard — GET /api/dashboard/admin/
@@ -938,4 +974,34 @@ export interface PaginatedResponse<T> {
 export interface ApiError {
   detail?: string
   [field: string]: string | string[] | undefined
+}
+
+// ─── Student directory — GET /api/students/ ──────────────────────────────────
+// Returned by the student-facing teammate discovery endpoint. `availability`
+// is precomputed server-side: "in_team" means the student is already in a
+// multi-member team and can't be invited; "available" means they can be.
+
+export type StudentAvailability = 'available' | 'in_team'
+
+export interface StudentDirectoryItem {
+  id: number
+  matricule: string
+  first_name: string
+  last_name: string
+  email: string
+  bio: string
+  interests: string[]
+  speciality: string | null
+  annual_average: string | null
+  academic_year: string | null
+  skills_summary: string
+  availability: StudentAvailability
+}
+
+export interface StudentDirectoryDetail extends StudentDirectoryItem {
+  cv_file_url: string
+}
+
+export interface StudentSpecialitiesResponse {
+  specialities: string[]
 }

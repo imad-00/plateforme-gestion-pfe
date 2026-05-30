@@ -1,6 +1,7 @@
 'use client'
 
-import { LogOut } from 'lucide-react'
+import Link from 'next/link'
+import { GraduationCap, LogOut, Menu } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import type { User } from '@/lib/types'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -25,33 +26,59 @@ function getRoleLabel(user: User): string {
   }
 }
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
   const { user, logout } = useAuth()
 
   if (!user) return null
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-end border-b border-border bg-card px-6">
-      <div className="flex items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-4 sm:px-6">
+      {/* Left: mobile menu trigger + compact logo (sidebar is hidden on mobile) */}
+      <div className="flex items-center gap-2 lg:hidden">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onMenuClick}
+          aria-label="Open navigation menu"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Menu className="size-5" />
+        </Button>
+        <Link href="/" className="flex items-center gap-2" aria-label="GradeX home">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <GraduationCap className="size-4" />
+          </span>
+          <span className="font-semibold tracking-tight">GradeX</span>
+        </Link>
+      </div>
+
+      {/* Spacer keeps the action cluster right-aligned on desktop */}
+      <div className="hidden lg:block" />
+
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Notifications */}
         <NotificationBell />
 
-        {/* Avatar */}
-        <Avatar size="sm">
-          <AvatarFallback className="bg-primary/10 text-xs text-primary">
-            {getInitials(user)}
-          </AvatarFallback>
-        </Avatar>
-
-        {/* Identity */}
-        <div className="flex flex-col leading-tight">
-          <span className="text-sm font-medium text-foreground">
-            {user.first_name} {user.last_name}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {getRoleLabel(user)}
-          </span>
-        </div>
+        {/* Avatar + identity → /profile */}
+        <Link
+          href="/profile"
+          className="flex items-center gap-3 rounded-md px-1 py-1 hover:bg-muted"
+          title="My profile"
+        >
+          <Avatar size="sm">
+            <AvatarFallback className="bg-primary/10 text-xs text-primary">
+              {getInitials(user)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="hidden flex-col leading-tight sm:flex">
+            <span className="text-sm font-medium text-foreground">
+              {user.first_name} {user.last_name}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {getRoleLabel(user)}
+            </span>
+          </div>
+        </Link>
 
         {/* Logout */}
         <Button

@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GradeX — PFE Management Platform · ESI Sidi Bel Abbès</title>
+<meta name="description" content="GradeX is the single platform where ESI-SBA students, professors, and juries manage final-year projects (PFE) — from subject proposal to final defense." />
+
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  GradeX — Landing Page
+  Final-Year Project (PFE) Management Platform
+  École Supérieure en Informatique — Sidi Bel Abbès (ESI-SBA)
+  ════════════════════════════════════════════════════════════════════════════
+
+  DESIGN DECISIONS
+  ----------------
+  Direction:  "Academic Editorial" — a Notion + Stripe hybrid.
+              Notion gives the structure: grayscale base, calm hierarchy,
+              content-first sections, generous whitespace.
+              Stripe gives the precision: hairline borders, mono-tagged data,
+              tidy tables and status pills, restrained motion.
+
+  Palette:    Near-monochrome. Warm-paper white surfaces (#FFFFFF / #FAFAF8),
+              near-black ink (#16181D), graded grays for text.
+              ONE accent — a deep, desaturated academic blue (#1D5C8C),
+              derived from the cool, serious tone of the reference shot and
+              kept cohesive with GradeX's institutional brand blue.
+              No second accent, no gradients, no purple.
+
+  Borders:    Crisp hairlines — 1px in a very low-contrast ink wash so they
+              read as fine as 0.5px on every display, without sub-pixel
+              disappearing. Almost no shadows (one whisper-soft elevation on
+              the hero card + sticky nav only).
+
+  Type:       Fraunces        — editorial serif for display headings (character,
+                                academic gravitas; deliberately not a generic UI sans).
+              Hanken Grotesk  — body & UI (clean, humanist, NOT Inter/Roboto).
+              JetBrains Mono   — eyebrows, labels, stat figures (the Stripe "data" voice).
+
+  Motion:     One choreographed idea — staggered fade-up on scroll via
+              IntersectionObserver, plus count-up on the stat figures. Nothing
+              decorative competes with the content.
+  ════════════════════════════════════════════════════════════════════════════
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  /* ───────────────────────── Tokens ───────────────────────── */
+  :root {
+    --paper:        #ffffff;
+    --surface:      #fafaf8;   /* warm off-white section bands  */
+    --surface-2:    #f5f5f1;
+    --ink:          #16181d;   /* headings / near-black         */
+    --text:         #3b3f47;   /* body                          */
+    --muted:        #6b7077;   /* secondary                     */
+    --faint:        #9aa0a7;   /* tertiary / captions           */
+
+    --line:         rgba(22, 24, 29, 0.10);
+    --line-soft:    rgba(22, 24, 29, 0.06);
+    --line-strong:  rgba(22, 24, 29, 0.16);
+
+    --accent:       #1d5c8c;   /* the single accent             */
+    --accent-ink:   #15486e;   /* darker, for hover/active       */
+    --accent-tint:  #eef3f8;   /* faint accent wash              */
+    --accent-line:  rgba(29, 92, 140, 0.22);
+
+    --ok:           #2f7d54;
+    --ok-tint:      #ecf6f0;
+    --warn:         #9a6b18;
+    --warn-tint:    #f9f2e3;
+
+    --radius:       12px;
+    --radius-sm:    8px;
+    --radius-lg:    18px;
+
+    --shadow-soft:  0 1px 2px rgba(22,24,29,.04), 0 8px 24px -12px rgba(22,24,29,.10);
+    --shadow-nav:   0 1px 0 var(--line), 0 6px 20px -16px rgba(22,24,29,.30);
+
+    --container:    1120px;
+    --ease:         cubic-bezier(.22,.61,.36,1);
+  }
+
+  /* ───────────────────────── Reset ───────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; scroll-padding-top: 88px; }
+  body {
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 17px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; text-decoration: none; }
+  ul { list-style: none; }
+  ::selection { background: var(--accent); color: #fff; }
+
+  h1, h2, h3 {
+    font-family: "Fraunces", Georgia, serif;
+    color: var(--ink);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.08;
+  }
+
+  /* ───────────────────────── Layout helpers ───────────────────────── */
+  .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 28px; }
+  .section   { padding: clamp(64px, 9vw, 128px) 0; }
+  .band      { background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .section-head { max-width: 680px; margin-bottom: clamp(40px, 5vw, 64px); }
+  .section-head .eyebrow { display: block; margin-bottom: 18px; }
+  .section-head h2 { font-size: clamp(30px, 4.2vw, 46px); margin-bottom: 18px; }
+  .section-head p  { font-size: clamp(16px, 1.6vw, 19px); color: var(--muted); max-width: 60ch; }
+
+  /* ───────────────────────── Buttons ───────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    padding: 11px 20px; border-radius: var(--radius-sm);
+    border: 1px solid transparent; cursor: pointer;
+    transition: background .18s var(--ease), color .18s var(--ease),
+                border-color .18s var(--ease), transform .18s var(--ease);
+    white-space: nowrap;
+  }
+  .btn svg { width: 16px; height: 16px; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  .btn-ghost:hover { background: var(--surface-2); border-color: var(--line-strong); }
+  .btn-quiet { background: transparent; color: var(--ink); padding: 11px 12px; }
+  .btn-quiet:hover { color: var(--accent); }
+  .btn-lg { padding: 14px 26px; font-size: 16px; }
+
+  /* ───────────────────────── Nav ───────────────────────── */
+  .nav {
+    position: sticky; top: 0; z-index: 60;
+    background: rgba(255,255,255,.82);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+    border-bottom: 1px solid transparent;
+    transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  .nav.scrolled { border-color: var(--line); box-shadow: var(--shadow-nav); }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); font-size: 18px; letter-spacing: -0.01em; }
+  .brand .mark {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--ink); color: #fff;
+    display: grid; place-items: center;
+    font-family: "Fraunces", serif; font-weight: 600; font-size: 17px;
+  }
+  .nav-links { display: flex; align-items: center; gap: 4px; }
+  .nav-links a { font-size: 15px; color: var(--muted); padding: 8px 12px; border-radius: 6px; transition: color .15s, background .15s; }
+  .nav-links a:hover { color: var(--ink); background: var(--surface-2); }
+  .nav-cta { display: flex; align-items: center; gap: 8px; }
+
+  .nav-toggle { display: none; background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; width: 42px; height: 40px; cursor: pointer; align-items: center; justify-content: center; }
+  .nav-toggle svg { width: 20px; height: 20px; color: var(--ink); }
+
+  .mobile-menu { display: none; border-top: 1px solid var(--line); background: var(--paper); padding: 14px 0 22px; }
+  .mobile-menu.open { display: block; }
+  .mobile-menu a { display: block; padding: 12px 4px; font-size: 16px; color: var(--ink); border-bottom: 1px solid var(--line-soft); }
+  .mobile-menu .mm-cta { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .mobile-menu .mm-cta .btn { width: 100%; justify-content: center; }
+
+  /* ───────────────────────── Hero ───────────────────────── */
+  .hero { position: relative; overflow: hidden; padding-top: clamp(56px, 7vw, 92px); }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 78%);
+            mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 78%);
+    opacity: .7;
+  }
+  .hero-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: clamp(36px, 5vw, 72px); align-items: center; }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 500;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    border: 1px solid var(--line); background: var(--paper);
+    padding: 6px 12px; border-radius: 100px; margin-bottom: 26px;
+  }
+  .hero-eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px var(--ok-tint); }
+  .hero h1 { font-size: clamp(40px, 6vw, 68px); font-weight: 600; margin-bottom: 24px; }
+  .hero h1 em { font-style: italic; color: var(--accent); font-weight: 500; }
+  .hero-sub { font-size: clamp(17px, 1.7vw, 20px); color: var(--muted); max-width: 52ch; margin-bottom: 34px; }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 30px; }
+  .hero-trust { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--faint); }
+  .hero-trust .avatars { display: flex; }
+  .hero-trust .avatars span {
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--paper);
+    margin-left: -8px; background: var(--surface-2); display: grid; place-items: center;
+    font-size: 11px; font-weight: 600; color: var(--muted); font-family: "JetBrains Mono", monospace;
+  }
+  .hero-trust .avatars span:first-child { margin-left: 0; }
+
+  /* Hero visual — framed product placeholder */
+  .hero-visual { position: relative; }
+  .browser {
+    border: 1px solid var(--line); border-radius: var(--radius-lg);
+    background: var(--paper); box-shadow: var(--shadow-soft); overflow: hidden;
+  }
+  .browser-bar { display: flex; align-items: center; gap: 8px; padding: 13px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .browser-bar .dots { display: flex; gap: 6px; }
+  .browser-bar .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); display: inline-block; }
+  .browser-bar .url {
+    margin-left: 8px; font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--faint);
+    background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; flex: 1; max-width: 280px;
+  }
+  .placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 12px, var(--surface-2) 12px, var(--surface-2) 24px);
+    color: var(--faint); text-align: center; padding: 24px;
+  }
+  .placeholder svg { width: 30px; height: 30px; opacity: .55; }
+  .placeholder .ph-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  .placeholder .ph-desc { font-size: 13px; max-width: 30ch; }
+  .hero-visual .placeholder { aspect-ratio: 16 / 11; }
+
+  .hero-badge {
+    position: absolute; bottom: -20px; left: -22px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow-soft); padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+  }
+  .hero-badge .pill { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 100px; background: var(--ok-tint); color: var(--ok); border: 1px solid rgba(47,125,84,.2); }
+  .hero-badge .meta b { display: block; color: var(--ink); font-size: 14px; font-weight: 600; }
+  .hero-badge .meta small { color: var(--faint); font-size: 12px; }
+
+  /* ───────────────────────── Logos / context strip ───────────────────────── */
+  .context { padding: 26px 0; border-bottom: 1px solid var(--line); }
+  .context-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 28px; justify-content: center; text-align: center; }
+  .context-inner span { font-family: "JetBrains Mono", monospace; font-size: 12.5px; letter-spacing: .04em; color: var(--faint); }
+  .context-inner .sep { width: 4px; height: 4px; border-radius: 50%; background: var(--line-strong); }
+
+  /* ───────────────────────── Features ───────────────────────── */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card {
+    background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 30px; transition: border-color .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease);
+  }
+  .card:hover { border-color: var(--line-strong); transform: translateY(-3px); box-shadow: var(--shadow-soft); }
+  .card .icon {
+    width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center;
+    background: var(--accent-tint); color: var(--accent); border: 1px solid var(--accent-line); margin-bottom: 20px;
+  }
+  .card .icon svg { width: 22px; height: 22px; }
+  .card .role-tag { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
+  .card h3 { font-size: 22px; margin-bottom: 10px; }
+  .card p { font-size: 15.5px; color: var(--muted); margin-bottom: 18px; }
+  .card .feature-list li {
+    display: flex; align-items: flex-start; gap: 10px; font-size: 14.5px; color: var(--text);
+    padding: 7px 0; border-top: 1px solid var(--line-soft);
+  }
+  .card .feature-list li:first-child { border-top: 0; }
+  .card .feature-list svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; margin-top: 3px; }
+
+  /* ───────────────────────── How it works ───────────────────────── */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--paper); }
+  .step { padding: 34px 32px; border-right: 1px solid var(--line); position: relative; }
+  .step:last-child { border-right: 0; }
+  .step .step-no { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600; color: var(--accent); letter-spacing: .1em; margin-bottom: 18px; }
+  .step .step-ic { width: 46px; height: 46px; border-radius: 12px; border: 1px solid var(--line); display: grid; place-items: center; color: var(--ink); margin-bottom: 22px; background: var(--surface); }
+  .step .step-ic svg { width: 22px; height: 22px; }
+  .step h3 { font-size: 21px; margin-bottom: 10px; }
+  .step p { font-size: 15px; color: var(--muted); }
+  .step .arrow { position: absolute; top: 44px; right: -11px; width: 22px; height: 22px; background: var(--paper); border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; z-index: 2; color: var(--faint); }
+  .step .arrow svg { width: 13px; height: 13px; }
+
+  /* mini-table to echo the Stripe "status" feel under the steps */
+  .flow-table { margin-top: 28px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--paper); }
+  .flow-table table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .flow-table th { text-align: left; font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 500; padding: 13px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .flow-table td { padding: 14px 20px; border-bottom: 1px solid var(--line-soft); color: var(--text); }
+  .flow-table tr:last-child td { border-bottom: 0; }
+  .flow-table td .who { color: var(--ink); font-weight: 600; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 100px; border: 1px solid; }
+  .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status.s-ok   { color: var(--ok);   background: var(--ok-tint);   border-color: rgba(47,125,84,.22); }
+  .status.s-warn { color: var(--warn); background: var(--warn-tint); border-color: rgba(154,107,24,.22); }
+  .status.s-acc  { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-line); }
+
+  /* ───────────────────────── Stats ───────────────────────── */
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .stat { background: var(--surface); padding: 38px 30px; text-align: center; }
+  .stat .num { font-family: "Fraunces", serif; font-weight: 600; font-size: clamp(38px, 5vw, 54px); color: var(--ink); line-height: 1; letter-spacing: -0.02em; }
+  .stat .num .suffix { color: var(--accent); }
+  .stat .label { font-family: "JetBrains Mono", monospace; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 14px; }
+
+  /* ───────────────────────── Testimonials ───────────────────────── */
+  .quotes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+  .quote { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 34px; display: flex; flex-direction: column; }
+  .quote .mark { font-family: "Fraunces", serif; font-size: 56px; line-height: .5; color: var(--accent-line); height: 30px; }
+  .quote blockquote { font-family: "Fraunces", serif; font-weight: 400; font-size: clamp(19px, 2vw, 23px); line-height: 1.45; color: var(--ink); letter-spacing: -.01em; margin-bottom: 26px; flex: 1; }
+  .quote .who { display: flex; align-items: center; gap: 14px; padding-top: 22px; border-top: 1px solid var(--line); }
+  .quote .who .av { width: 46px; height: 46px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; font-family: "JetBrains Mono", monospace; font-weight: 600; font-size: 15px; color: var(--muted); flex-shrink: 0; }
+  .quote .who b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; }
+  .quote .who small { color: var(--faint); font-size: 13px; }
+
+  /* ───────────────────────── CTA ───────────────────────── */
+  .cta-band { text-align: center; }
+  .cta-card {
+    border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--paper);
+    padding: clamp(48px, 7vw, 88px) 32px; position: relative; overflow: hidden;
+  }
+  .cta-card::before {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 50%, #000, transparent 75%);
+            mask-image: radial-gradient(ellipse 60% 70% at 50% 50%, #000, transparent 75%);
+    opacity: .6;
+  }
+  .cta-card > * { position: relative; z-index: 1; }
+  .cta-card .eyebrow { display: block; margin-bottom: 18px; }
+  .cta-card h2 { font-size: clamp(30px, 4.4vw, 50px); margin-bottom: 16px; max-width: 16ch; margin-inline: auto; }
+  .cta-card p { color: var(--muted); font-size: 18px; max-width: 52ch; margin: 0 auto 30px; }
+  .cta-card .hero-actions { justify-content: center; margin-bottom: 0; }
+
+  /* ───────────────────────── Footer ───────────────────────── */
+  .footer { border-top: 1px solid var(--line); background: var(--surface); padding: 64px 0 36px; }
+  .footer-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 40px; padding-bottom: 44px; border-bottom: 1px solid var(--line); }
+  .footer .brand { margin-bottom: 16px; }
+  .footer .about { font-size: 14.5px; color: var(--muted); max-width: 34ch; }
+  .footer .inst { font-size: 13.5px; color: var(--faint); margin-top: 16px; line-height: 1.5; }
+  .footer h4 { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 500; margin-bottom: 16px; }
+  .footer ul li { margin-bottom: 11px; }
+  .footer ul a { font-size: 14.5px; color: var(--muted); transition: color .15s; }
+  .footer ul a:hover { color: var(--accent); }
+  .footer-bottom { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding-top: 26px; }
+  .footer-bottom small { font-size: 13px; color: var(--faint); }
+  .footer-bottom .legal { display: flex; gap: 20px; }
+
+  /* ───────────────────────── Reveal animation ───────────────────────── */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+  .reveal.in { opacity: 1; transform: none; }
+  .reveal[data-delay="1"] { transition-delay: .07s; }
+  .reveal[data-delay="2"] { transition-delay: .14s; }
+  .reveal[data-delay="3"] { transition-delay: .21s; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+  }
+
+  /* ───────────────────────── Responsive ───────────────────────── */
+  @media (max-width: 940px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-visual { order: -1; }
+    .hero-badge { left: 8px; }
+    .grid-3 { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .step { border-right: 0; border-bottom: 1px solid var(--line); }
+    .step:last-child { border-bottom: 0; }
+    .step .arrow { display: none; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .quotes { grid-template-columns: 1fr; }
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+    .footer-grid .footer-about { grid-column: 1 / -1; }
+  }
+  @media (max-width: 720px) {
+    .nav-links, .nav-cta { display: none; }
+    .nav-toggle { display: flex; }
+    .container { padding: 0 20px; }
+  }
+  @media (max-width: 520px) {
+    body { font-size: 16px; }
+    .stats-grid { grid-template-columns: 1fr; }
+    .footer-grid { grid-template-columns: 1fr; }
+    .footer-bottom { flex-direction: column; align-items: flex-start; }
+    .hero-badge { display: none; }
+    .flow-table { overflow-x: auto; }
+    .flow-table table { min-width: 460px; }
+  }
+</style>
+</head>
+
+<body>
+
+<!-- ═══════════════════════ NAV ═══════════════════════ -->
+<header class="nav" id="nav">
+  <div class="container nav-inner">
+    <a href="#top" class="brand" aria-label="GradeX home">
+      <span class="mark">G</span> GradeX
+    </a>
+
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#stats">Impact</a>
+      <a href="#testimonials">Voices</a>
+    </nav>
+
+    <div class="nav-cta">
+      <a href="/login" class="btn btn-quiet">Sign in</a>
+      <a href="/login" class="btn btn-primary">
+        Get started
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+
+    <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+
+  <div class="mobile-menu" id="mobileMenu">
+    <div class="container">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#stats">Impact</a>
+      <a href="#testimonials">Voices</a>
+      <div class="mm-cta">
+        <a href="/login" class="btn btn-ghost">Sign in</a>
+        <a href="/login" class="btn btn-primary">Get started</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ═══════════════════════ HERO ═══════════════════════ -->
+  <section class="hero section" id="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <span class="hero-eyebrow reveal"><span class="dot"></span> École Supérieure en Informatique · Sidi Bel Abbès</span>
+          <h1 class="reveal" data-delay="1">From first proposal to <em>final defense</em>, one academic workflow.</h1>
+          <p class="hero-sub reveal" data-delay="2">GradeX is the single platform where ESI-SBA students, professors, and juries run final-year projects — subjects, teams, deliverables, and defense scheduling, all in one transparent space, one academic year at a time.</p>
+
+          <div class="hero-actions reveal" data-delay="2">
+            <a href="/login" class="btn btn-primary btn-lg">
+              Get started
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+            <a href="#how-it-works" class="btn btn-ghost btn-lg">See how it works</a>
+          </div>
+
+          <div class="hero-trust reveal" data-delay="3">
+            <div class="avatars">
+              <span>SB</span><span>KB</span><span>YA</span><span>NM</span>
+            </div>
+            Trusted across departments at ESI-SBA — students, supervisors &amp; juries.
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" data-delay="1">
+          <div class="browser">
+            <div class="browser-bar">
+              <span class="dots"><i></i><i></i><i></i></span>
+              <span class="url">app.gradex.esi-sba.dz/dashboard</span>
+            </div>
+            <!-- IMAGE: Hero product screenshot — the GradeX student dashboard -->
+            <!-- PROMPT: A clean SaaS dashboard UI screenshot for a university final-year-project platform, light theme on white background, left sidebar navigation, a header bar, summary stat cards (teams, subjects, deliverables, defenses), a defense-schedule table with small colored status pills, hairline 1px borders, generous whitespace, Notion-meets-Stripe aesthetic, deep desaturated blue accent (#1D5C8C), Hanken Grotesk style sans-serif, no drop shadows, crisp and professional, 16:11 aspect ratio -->
+            <div class="placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>
+              <span class="ph-label">Image placeholder</span>
+              <span class="ph-desc">GradeX dashboard screenshot — see PROMPT in source for generation.</span>
+            </div>
+          </div>
+
+          <div class="hero-badge">
+            <span class="pill">Scheduled</span>
+            <div class="meta">
+              <b>Defense · Room B-204</b>
+              <small>Jury of 3 · Thu 14:30</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════ CONTEXT STRIP ═══════════════════════ -->
+  <div class="context">
+    <div class="container context-inner reveal">
+      <span>SUBJECT SUBMISSION</span><span class="sep"></span>
+      <span>TEAM FORMATION</span><span class="sep"></span>
+      <span>WISHLIST &amp; ASSIGNMENT</span><span class="sep"></span>
+      <span>DELIVERABLES</span><span class="sep"></span>
+      <span>DEFENSE WINDOW</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ FEATURES ═══════════════════════ -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Built for every role</span>
+        <h2>One platform, three points of view.</h2>
+        <p>GradeX adapts to who you are. Students, professors, and jury members each get exactly the tools their part of the PFE process needs — nothing more, nothing in the way.</p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Students -->
+        <article class="card reveal">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1 2.7 2.5 6 2.5s6-1.5 6-2.5v-5"/></svg>
+          </div>
+          <div class="role-tag">For students</div>
+          <h3>Form a team, claim a subject.</h3>
+          <p>Find teammates, lock in your group, rank the subjects you want, then track every deliverable and deadline as the campaign moves through its phases.</p>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Discover teammates &amp; build your group</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Wishlist &amp; rank available subjects</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Upload deliverables &amp; follow review status</li>
+          </ul>
+        </article>
+
+        <!-- Professors -->
+        <article class="card reveal" data-delay="1">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+          </div>
+          <div class="role-tag">For professors</div>
+          <h3>Propose, supervise, review.</h3>
+          <p>Submit subject proposals for approval, supervise assigned teams, and review their deliverables with structured feedback — all from one supervision board.</p>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Propose subjects &amp; set team capacity</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Supervise teams across the campaign</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Review deliverables &amp; request revisions</li>
+          </ul>
+        </article>
+
+        <!-- Jury -->
+        <article class="card reveal" data-delay="2">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14 13-7.5 7.5a2.1 2.1 0 0 1-3-3L11 10"/><path d="m16 16 6-6"/><path d="m8 8 6-6"/><path d="m9 7 8 8"/><path d="m21 11-8-8"/></svg>
+          </div>
+          <div class="role-tag">For juries</div>
+          <h3>Evaluate with full context.</h3>
+          <p>See every defense you're assigned to, read the project and its deliverables ahead of time, then record evaluations and publish grades in a single pass.</p>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> View assigned defenses &amp; schedules</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Read project files before the session</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg> Record evaluations &amp; publish grades</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════ HOW IT WORKS ═══════════════════════ -->
+  <section class="section band" id="how-it-works">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">The workflow</span>
+        <h2>Three steps, from idea to defense.</h2>
+        <p>The whole PFE lifecycle is phase-gated — features open and close at the right moment, so everyone always knows what to do next.</p>
+      </div>
+
+      <div class="steps">
+        <div class="step reveal">
+          <div class="step-no">STEP 01</div>
+          <div class="step-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6h6"/><path d="M4 13.5V4a2 2 0 0 1 2-2h8l6 6v11a2 2 0 0 1-2 2H6"/><path d="M2 18h7"/><path d="m6 15-3 3 3 3"/></svg>
+          </div>
+          <h3>Submit</h3>
+          <p>Professors propose subjects and admins approve them. Students form their team, lock it, and submit a ranked wishlist of the topics they want.</p>
+          <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>
+        </div>
+
+        <div class="step reveal" data-delay="1">
+          <div class="step-no">STEP 02</div>
+          <div class="step-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
+          </div>
+          <h3>Schedule</h3>
+          <p>The assignment algorithm matches teams to subjects. Admins set defense windows and the jury fixes a date, a room, and the panel for each session.</p>
+          <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></div>
+        </div>
+
+        <div class="step reveal" data-delay="2">
+          <div class="step-no">STEP 03</div>
+          <div class="step-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+          </div>
+          <h3>Defend</h3>
+          <p>Teams present to the jury, who already have the project and its deliverables on hand. Evaluations are recorded and grades published — same day.</p>
+        </div>
+      </div>
+
+      <!-- Stripe-style status table echoing the lifecycle -->
+      <div class="flow-table reveal" data-delay="1">
+        <table>
+          <thead>
+            <tr><th>Stage</th><th>Owner</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="who">Subject proposal</span> — “Federated learning for IoT”</td><td>Dr. K. Belhadj</td><td><span class="status s-ok">Approved</span></td></tr>
+            <tr><td><span class="who">Team Aurora</span> — 3 members, locked</td><td>Y. Benali</td><td><span class="status s-ok">Validated</span></td></tr>
+            <tr><td><span class="who">Deliverable</span> — Mid-term report v2</td><td>Supervisor review</td><td><span class="status s-warn">In review</span></td></tr>
+            <tr><td><span class="who">Defense</span> — Room B-204, jury of 3</td><td>Jury panel</td><td><span class="status s-acc">Scheduled</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════ STATS ═══════════════════════ -->
+  <section class="section" id="stats">
+    <div class="container">
+      <div class="section-head reveal" style="max-width:none;display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:20px;">
+        <div style="max-width:560px">
+          <span class="eyebrow" style="display:block;margin-bottom:18px;">By the numbers</span>
+          <h2 style="font-size:clamp(30px,4.2vw,46px);margin-bottom:0;">A full campaign, kept on track.</h2>
+        </div>
+        <p style="color:var(--muted);max-width:42ch;">Indicative figures from a recent PFE campaign managed end-to-end on GradeX at ESI-SBA.</p>
+      </div>
+
+      <div class="stats-grid reveal" data-delay="1">
+        <div class="stat">
+          <div class="num" data-count="1400" data-suffix="+">0</div>
+          <div class="label">Students onboarded</div>
+        </div>
+        <div class="stat">
+          <div class="num" data-count="520">0</div>
+          <div class="label">PFE projects managed</div>
+        </div>
+        <div class="stat">
+          <div class="num" data-count="180">0</div>
+          <div class="label">Professors &amp; supervisors</div>
+        </div>
+        <div class="stat">
+          <div class="num" data-count="96" data-suffix="%">0</div>
+          <div class="label">Defenses on schedule</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════ TESTIMONIALS ═══════════════════════ -->
+  <section class="section band" id="testimonials">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Voices from campus</span>
+        <h2>What students and supervisors say.</h2>
+      </div>
+
+      <div class="quotes">
+        <figure class="quote reveal">
+          <div class="mark">&ldquo;</div>
+          <blockquote>For the first time the whole PFE felt organised. I always knew which phase was open, when my deliverables were due, and exactly where my team stood — no more chasing emails before every deadline.</blockquote>
+          <figcaption class="who">
+            <!-- IMAGE: Student headshot avatar -->
+            <!-- PROMPT: Professional headshot portrait of a female Algerian computer-science student in her early twenties, neutral light-gray studio background, soft even lighting, friendly approachable expression, editorial corporate style, natural color, no heavy retouching, square crop -->
+            <span class="av">YB</span>
+            <div>
+              <b>Yasmine Benali</b>
+              <small>5th-year student · ESI-SBA</small>
+            </div>
+          </figcaption>
+        </figure>
+
+        <figure class="quote reveal" data-delay="1">
+          <div class="mark">&ldquo;</div>
+          <blockquote>Proposing subjects, supervising teams and reviewing deliverables used to live in three different places. GradeX put them on one board — and scheduling defenses with the jury became a five-minute job instead of a week of back-and-forth.</blockquote>
+          <figcaption class="who">
+            <!-- IMAGE: Professor headshot avatar -->
+            <!-- PROMPT: Professional headshot portrait of a male Algerian university professor in his forties wearing a smart blazer, neutral light-gray studio background, soft even lighting, confident calm expression, editorial corporate style, natural color, square crop -->
+            <span class="av">KB</span>
+            <div>
+              <b>Dr. Karim Belhadj</b>
+              <small>Associate Professor &amp; PFE supervisor · ESI-SBA</small>
+            </div>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════ CTA ═══════════════════════ -->
+  <section class="section cta-band" id="get-started">
+    <div class="container">
+      <div class="cta-card reveal">
+        <span class="eyebrow">Ready when your campaign is</span>
+        <h2>Run your next PFE campaign on GradeX.</h2>
+        <p>Bring students, professors, and juries into one transparent workflow — from the first subject proposal to the final published grade.</p>
+        <div class="hero-actions">
+          <a href="/login" class="btn btn-primary btn-lg">
+            Get started
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a href="/login" class="btn btn-ghost btn-lg">Sign in to your account</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════════════════ FOOTER ═══════════════════════ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-about">
+        <a href="#top" class="brand"><span class="mark">G</span> GradeX</a>
+        <p class="about">The final-year project (PFE) management platform — subjects, teams, deliverables and defenses, in one academic workflow.</p>
+        <p class="inst">
+          École Supérieure en Informatique<br />
+          Sidi Bel Abbès (ESI-SBA), Algeria
+        </p>
+      </div>
+
+      <div>
+        <h4>Platform</h4>
+        <ul>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#how-it-works">How it works</a></li>
+          <li><a href="#stats">Impact</a></li>
+          <li><a href="/login">Sign in</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Roles</h4>
+        <ul>
+          <li><a href="#features">Students</a></li>
+          <li><a href="#features">Professors</a></li>
+          <li><a href="#features">Supervisors</a></li>
+          <li><a href="#features">Jury members</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Institution</h4>
+        <ul>
+          <li><a href="https://www.esi-sba.dz" target="_blank" rel="noopener">esi-sba.dz</a></li>
+          <li><a href="#testimonials">Testimonials</a></li>
+          <li><a href="#get-started">Get started</a></li>
+          <li><a href="mailto:contact@esi-sba.dz">Contact</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <small>© <span id="year">2026</span> GradeX · École Supérieure en Informatique — Sidi Bel Abbès.</small>
+      <div class="legal">
+        <small><a href="#">Privacy</a></small>
+        <small><a href="#">Terms</a></small>
+        <small><a href="#">Accessibility</a></small>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  /* ── Nav: shadow on scroll ── */
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  /* ── Mobile menu ── */
+  const toggle = document.getElementById('navToggle');
+  const menu = document.getElementById('mobileMenu');
+  toggle.addEventListener('click', () => {
+    const open = menu.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+  menu.querySelectorAll('a').forEach(a =>
+    a.addEventListener('click', () => {
+      menu.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+    })
+  );
+
+  /* ── Reveal on scroll ── */
+  const revealEls = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    revealEls.forEach(el => io.observe(el));
+  } else {
+    revealEls.forEach(el => el.classList.add('in'));
+  }
+
+  /* ── Stat count-up ── */
+  const fmt = (n) => n.toLocaleString('en-US');
+  function animateCount(el) {
+    const target = parseInt(el.dataset.count, 10);
+    const suffix = el.dataset.suffix || '';
+    const dur = 1400, start = performance.now();
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    function tick(now) {
+      const p = Math.min((now - start) / dur, 1);
+      const val = Math.round(ease(p) * target);
+      el.innerHTML = fmt(val) + (suffix ? '<span class="suffix">' + suffix + '</span>' : '');
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  const nums = document.querySelectorAll('.num[data-count]');
+  if ('IntersectionObserver' in window) {
+    const numIO = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { animateCount(e.target); numIO.unobserve(e.target); }
+      });
+    }, { threshold: 0.6 });
+    nums.forEach(n => numIO.observe(n));
+  } else {
+    nums.forEach(n => { n.innerHTML = fmt(parseInt(n.dataset.count,10)) + (n.dataset.suffix||''); });
+  }
+
+  /* ── Year ── */
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+
+</body>
+</html>

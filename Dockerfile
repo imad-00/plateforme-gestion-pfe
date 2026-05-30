@@ -19,7 +19,7 @@ COPY . .
 # caller passes them via --build-arg or via the docker-compose `args` block.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-RUN npm run build
+RUN mkdir -p public && npm run build
 
 # ─── Stage 3: runner ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -32,6 +32,7 @@ ENV HOSTNAME=0.0.0.0
 # Standalone Next.js output bundles only what server.js actually requires.
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# public/ may not exist; copy from builder where we guaranteed its presence
 COPY --from=builder /app/public ./public
 
 EXPOSE 3000
